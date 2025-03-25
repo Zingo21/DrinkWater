@@ -1,13 +1,24 @@
 package services
 
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import io.ktor.server.websocket.DefaultWebSocketServerSession
+import io.ktor.websocket.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class PushNotificationService {
 
+    private val clients = mutableMapOf<String, DefaultWebSocketServerSession>()
+    private val lock = Mutex()
+
+    suspend fun registerClient(userId: String, session: DefaultWebSocketServerSession) {
+        lock.withLock {
+            clients[userId] = session
+        }
+    }
+
+    suspend fun sendPushNotification(userId: String, title: String, message: String) {
+        lock.withLock {
+            clients[userId]?.send("NOTIFICATION|$title|$message")
+        }
+    }
 }
