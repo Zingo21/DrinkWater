@@ -1,11 +1,13 @@
 package org.erbeenjoyers.drinkwater
 
+import database.DatabaseFactory
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.WebSockets
+import routes.drinkRoutes
 import routes.pushRoutes
 import routes.webSocketRoutes
 
@@ -15,10 +17,15 @@ fun main() {
 }
 
 fun Application.module() {
-    install(WebSockets)
+    fun Application.module() {
+        install(WebSockets)
 
-    routing {
-        webSocketRoutes()
-        pushRoutes()
+        DatabaseFactory.init()
+
+        routing {
+            webSocketRoutes()
+            pushRoutes()
+            drinkRoutes()
+        }
     }
 }
