@@ -5,7 +5,7 @@ import io.ktor.websocket.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-class PushNotificationService {
+object PushNotificationService {
 
     private val clients = mutableMapOf<String, DefaultWebSocketServerSession>()
     private val lock = Mutex()
