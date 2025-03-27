@@ -15,7 +15,7 @@ fun Route.pushRoutes() {
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val message = frame.readText()
-                    println("Mottog push-meddelande: $message")
+                    println("Received push message: $message")
                 }
             }
         } finally {
