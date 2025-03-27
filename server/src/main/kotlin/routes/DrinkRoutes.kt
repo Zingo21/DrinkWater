@@ -7,6 +7,7 @@ import io.ktor.server.response.*
 import database.DrinkLogs
 import database.Users
 import database.Drinks
+import io.ktor.http.HttpStatusCode
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 
@@ -20,7 +21,7 @@ fun Route.drinkRoutes() {
                 it[timestamp] = System.currentTimeMillis()
             }
         }
-        call.respondText("Dricklogg sparad!")
+        call.respondText("Drink added!", status = HttpStatusCode.Created)
     }
 
     get("/drinks") {
