@@ -23,6 +23,10 @@ fun Application.module() {
     DatabaseFactory.init()
 
     routing {
+        get("/"){
+            call.respondText("Drink Water API is running \uD83D\uDE80")
+        }
+
         webSocketRoutes()
         pushRoutes()
         drinkRoutes()
