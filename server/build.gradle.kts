@@ -16,7 +16,7 @@ dependencies {
     implementation(libs.logback)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)
-    testImplementation(libs.ktor.server.tests)
+    testImplementation(libs.ktor.ktor.server.tests.jvm.v237)
     testImplementation(libs.kotlin.test.junit)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
@@ -27,5 +27,5 @@ dependencies {
     implementation(libs.exposed.core)
     implementation(libs.exposed.dao)
     implementation(libs.exposed.jdbc)
-    implementation(libs.exposed.json)
+    implementation(libs.kotlinx.serialization.json)
 }
