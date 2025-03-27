@@ -16,16 +16,15 @@ fun main() {
         .start(wait = true)
 }
 
+
 fun Application.module() {
-    fun Application.module() {
-        install(WebSockets)
+    install(WebSockets)
 
-        DatabaseFactory.init()
+    DatabaseFactory.init()
 
-        routing {
-            webSocketRoutes()
-            pushRoutes()
-            drinkRoutes()
-        }
+    routing {
+        webSocketRoutes()
+        pushRoutes()
+        drinkRoutes()
     }
 }
