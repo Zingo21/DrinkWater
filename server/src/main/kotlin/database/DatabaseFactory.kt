@@ -1,17 +1,34 @@
 package database
 
 import org.jetbrains.exposed.sql.*
+import org.jetbrains.exposed.sql.Database
+import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.transactions.transactionManager
+import java.sql.Connection
 
 object DatabaseFactory {
     fun init() {
-        Database.connect("jdbc:sqlite:drinkwater.db", driver = "org.sqlite.JDBC")
+        try {
+            val database = Database.connect(
+                "jdbc:sqlite:drinkwater.db",
+                driver = "org.sqlite.JDBC"
+            )
 
-        transaction {
-            SchemaUtils.create(Users, Drinks, DrinkLogs)
+            database.transactionManager.defaultIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
+
+            transaction(database) {
+                SchemaUtils.createMissingTablesAndColumns(Users, Drinks, DrinkLogs)
+            }
+
+            println("✅ Database initialized successfully!")
+        } catch (e: Exception) {
+            println("❌ Database initialization failed: ${e.localizedMessage}")
+            e.printStackTrace()
         }
     }
 }
+
 
 object Users : Table() {
     val id = integer("id").autoIncrement()
