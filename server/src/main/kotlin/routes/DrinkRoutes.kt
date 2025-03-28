@@ -8,6 +8,7 @@ import database.DrinkLogs
 import database.Users
 import database.Drinks
 import io.ktor.http.HttpStatusCode
+import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
 
@@ -32,4 +33,5 @@ fun Route.drinkRoutes() {
     }
 }
 
+@Serializable
 data class DrinkLogRequest(val userId: Int, val drinkId: Int)
