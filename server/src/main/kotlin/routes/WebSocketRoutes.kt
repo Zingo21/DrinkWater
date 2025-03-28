@@ -15,7 +15,7 @@ fun Route.webSocketRoutes() {
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val message = frame.readText()
-                    // Skicka meddelandet till alla anslutna klienter
+                    // Send message to connected clients
                     connections.forEach { session ->
                         session.send("En vän har druckit: $message")
                     }
