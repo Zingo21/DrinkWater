@@ -22,9 +22,3 @@ data class AddFriendRequest(
     val userId: Int,
     val friendUsername: String
 )
-
-@Serializable
-data class RemoveFriendRequest(
-    val userId: Int,
-    val friendId: Int
-)

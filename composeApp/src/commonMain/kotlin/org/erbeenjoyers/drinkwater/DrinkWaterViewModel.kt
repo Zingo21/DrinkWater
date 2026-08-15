@@ -160,7 +160,7 @@ class DrinkWaterViewModel(
     }
 
     private fun loadAll() {
-        val userId = _uiState.value.currentUserId ?: run {
+        if (_uiState.value.currentUserId == null) {
             _uiState.update { it.copy(isLoading = false) }
             return
         }
