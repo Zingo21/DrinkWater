@@ -1,16 +1,15 @@
 package routes
 
 import io.ktor.server.routing.*
-import io.ktor.server.application.*
 import io.ktor.server.websocket.*
 import io.ktor.websocket.*
-import services.PushNotificationService
+import services.NotificationService
 
 fun Route.pushRoutes() {
     webSocket("/push/{userId}") {
-        val userId = call.parameters["userId"] ?: return@webSocket close()
-        PushNotificationService.registerClient(userId, this)
-
+        val userId = call.parameters["userId"]?.toIntOrNull()
+            ?: return@webSocket close()
+        NotificationService.registerClient(userId, this)
         try {
             for (frame in incoming) {
                 if (frame is Frame.Text) {
@@ -19,7 +18,7 @@ fun Route.pushRoutes() {
                 }
             }
         } finally {
-            close()
+            NotificationService.unregisterClient(userId)
         }
     }
 }

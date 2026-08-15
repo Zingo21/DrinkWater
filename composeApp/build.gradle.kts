@@ -33,6 +33,10 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.ktor.client.okhttp)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -44,6 +48,10 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(projects.shared)
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.content.negotiation)
+            implementation(libs.ktor.serialization.kotlinx.json)
+            implementation(libs.kotlinx.serialization.json)
         }
     }
 }
@@ -51,7 +59,6 @@ kotlin {
 android {
     namespace = "org.erbeenjoyers.drinkwater"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
-
     defaultConfig {
         applicationId = "org.erbeenjoyers.drinkwater"
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -78,4 +85,3 @@ android {
 dependencies {
     debugImplementation(compose.uiTooling)
 }
-
