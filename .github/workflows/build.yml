@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Server tests
+        run: ./gradlew :server:test
+
+      - name: Build Android app
+        run: ./gradlew :composeApp:assembleDebug
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-test-reports
+          path: server/build/reports/tests/
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: drinkwater-debug-apk
+          path: composeApp/build/outputs/apk/debug/*.apk
