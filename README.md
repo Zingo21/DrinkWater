@@ -17,3 +17,29 @@ This is a Kotlin Multiplatform project targeting Android, iOS, Server.
 
 
 Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+## Server API
+
+Run the server with `./gradlew :server:run` (port 8080). Configuration via environment variables:
+
+* `JWT_SECRET` – secret used to sign tokens. Required outside development mode.
+* `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
+
+All request and response types live in `shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/api`,
+so the app and the server use the same models. Endpoints marked 🔒 need an `Authorization: Bearer <token>` header.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/auth/register` | Create an account, returns a token |
+| POST | `/auth/login` | Log in, returns a token |
+| GET 🔒 | `/me` | The logged-in user |
+| GET 🔒 | `/friends` | List friends |
+| DELETE 🔒 | `/friends/{friendId}` | Remove a friend |
+| GET 🔒 | `/friends/requests` | Incoming and outgoing friend requests |
+| POST 🔒 | `/friends/requests` | Send a friend request by username (accepts it if they already asked you) |
+| POST 🔒 | `/friends/requests/{id}/accept` | Accept an incoming request |
+| DELETE 🔒 | `/friends/requests/{id}` | Decline an incoming or cancel an outgoing request |
+| GET | `/drinks` | Available drinks |
+| POST 🔒 | `/drink` | Log a drink; friends get notified |
+| WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
+
+Run the server tests with `./gradlew :server:test`.

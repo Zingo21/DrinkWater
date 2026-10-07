@@ -1,51 +1,37 @@
 package database
 
-import org.jetbrains.exposed.sql.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
+import org.jetbrains.exposed.sql.Transaction
+import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.transactions.transactionManager
 import java.sql.Connection
 
+/** Wraps the Exposed [Database] so every query runs on the IO dispatcher. */
+class Db(val database: Database) {
+    suspend fun <T> query(block: Transaction.() -> T): T =
+        withContext(Dispatchers.IO) { transaction(database) { block() } }
+}
+
 object DatabaseFactory {
-    fun init() {
-        try {
-            val database = Database.connect(
-                "jdbc:sqlite:drinkwater.db",
-                driver = "org.sqlite.JDBC"
-            )
+    private val defaultDrinks = listOf("Vatten")
 
-            database.transactionManager.defaultIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
+    fun init(jdbcUrl: String): Db {
+        val database = Database.connect(jdbcUrl, driver = "org.sqlite.JDBC")
+        database.transactionManager.defaultIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
 
-            transaction(database) {
-                SchemaUtils.createMissingTablesAndColumns(Users, Drinks, DrinkLogs)
+        transaction(database) {
+            SchemaUtils.create(Users, Drinks, DrinkLogs, Friendships)
+            if (Drinks.selectAll().empty()) {
+                defaultDrinks.forEach { drinkName -> Drinks.insert { it[name] = drinkName } }
             }
-
-            println("✅ Database initialized successfully!")
-        } catch (e: Exception) {
-            println("❌ Database initialization failed: ${e.localizedMessage}")
-            e.printStackTrace()
         }
+
+        println("✅ Database initialized successfully!")
+        return Db(database)
     }
-}
-
-
-object Users : Table() {
-    val id = integer("id").autoIncrement()
-    val username = varchar("username", 50)
-    override val primaryKey = PrimaryKey(id)
-}
-
-object Drinks : Table() {
-    val id = integer("id").autoIncrement()
-    val name = varchar("name", 50)
-    override val primaryKey = PrimaryKey(id)
-}
-
-object DrinkLogs : Table() {
-    val id = integer("id").autoIncrement()
-    val userId = integer("user_id").references(Users.id)
-    val drinkId = integer("drink_id").references(Drinks.id)
-    val timestamp = long("timestamp")
-    override val primaryKey = PrimaryKey(id)
 }

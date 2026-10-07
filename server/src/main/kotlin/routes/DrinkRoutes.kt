@@ -1,37 +1,24 @@
 package routes
 
-import io.ktor.server.routing.*
-import io.ktor.server.application.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import database.DrinkLogs
-import database.Users
-import database.Drinks
 import io.ktor.http.HttpStatusCode
-import kotlinx.serialization.Serializable
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.transactions.transaction
+import io.ktor.server.auth.authenticate
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import org.erbeenjoyers.drinkwater.api.DrinkLogRequest
+import services.DrinkService
 
-fun Route.drinkRoutes() {
-    post("/drink") {
-        val request = call.receive<DrinkLogRequest>()
-        transaction {
-            DrinkLogs.insert {
-                it[userId] = request.userId
-                it[drinkId] = request.drinkId
-                it[timestamp] = System.currentTimeMillis()
-            }
-        }
-        call.respondText("Drink added!", status = HttpStatusCode.Created)
+fun Route.drinkRoutes(drinks: DrinkService) {
+    get("/drinks") {
+        call.respond(drinks.drinks())
     }
 
-    get("/drinks") {
-        val drinks = transaction {
-            Drinks.selectAll().map { it[Drinks.name] }
+    authenticate {
+        post("/drink") {
+            val request = call.receive<DrinkLogRequest>()
+            call.respond(HttpStatusCode.Created, drinks.logDrink(call.userId, request.drinkId))
         }
-        call.respond(drinks)
     }
 }
-
-@Serializable
-data class DrinkLogRequest(val userId: Int, val drinkId: Int)
