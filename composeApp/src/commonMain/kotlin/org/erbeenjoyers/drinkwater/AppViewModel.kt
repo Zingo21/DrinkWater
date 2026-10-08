@@ -25,6 +25,7 @@ import org.erbeenjoyers.drinkwater.api.DrinkDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
 import org.erbeenjoyers.drinkwater.api.FriendRequestDto
 import org.erbeenjoyers.drinkwater.api.FriendRequestResult
+import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.StatsDto
 import org.erbeenjoyers.drinkwater.api.UserDto
@@ -53,7 +54,8 @@ data class StatsState(
 )
 
 data class FriendsState(
-    val friends: List<UserDto> = emptyList(),
+    /** The user and their friends, whoever has drunk the most today first. */
+    val leaderboard: List<LeaderboardEntryDto> = emptyList(),
     val incoming: List<FriendRequestDto> = emptyList(),
     val outgoing: List<FriendRequestDto> = emptyList(),
     /** False until the lists have been fetched once; later refreshes keep showing the old lists. */
@@ -74,8 +76,11 @@ data class FeedState(
 class AppViewModel(
     private val api: DrinkWaterApi,
     private val sessions: SessionStore,
+    private val reminderStore: ReminderStore,
     /** Null on platforms where push notifications aren't set up. */
     private val push: PushRegistration? = null,
+    /** Null on platforms that can't remind the user to drink. */
+    private val reminders: ReminderScheduler? = null,
 ) : ViewModel() {
     /** The logged-in user, or null while logged out. */
     var user by mutableStateOf<UserDto?>(null)
@@ -90,6 +95,11 @@ class AppViewModel(
         private set
     var feed by mutableStateOf(FeedState())
         private set
+    var reminderSettings by mutableStateOf(reminderStore.load())
+        private set
+
+    /** Whether this device can remind the user to drink at all. */
+    val canRemind: Boolean get() = reminders != null
 
     private val _messages = Channel<String>(Channel.BUFFERED)
 
@@ -135,6 +145,13 @@ class AppViewModel(
         stats = StatsState()
         friends = FriendsState()
         feed = FeedState()
+        planReminder()
+    }
+
+    fun changeReminderSettings(settings: ReminderSettings) {
+        reminderStore.save(settings)
+        reminderSettings = settings
+        planReminder()
     }
 
     fun loadDrinks() {
@@ -161,6 +178,7 @@ class AppViewModel(
                     if (log.goalReached) "Daily goal reached!" else "Logged: $amountMl ml ${drink.name}",
                 )
                 refreshStats()
+                refreshFriends()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (!expireSessionIfUnauthorized(e)) _messages.send(e.userMessage())
@@ -180,6 +198,7 @@ class AppViewModel(
                     current.await() to recent.await()
                 }
                 stats = stats.copy(stats = current, recent = recent)
+                planReminder()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 if (!expireSessionIfUnauthorized(e)) stats = stats.copy(loadError = e.userMessage())
@@ -203,13 +222,13 @@ class AppViewModel(
         friends = friends.copy(loadError = null)
         launchInSession {
             try {
-                val (list, requests) = coroutineScope {
-                    val list = async { api.friends() }
+                val (leaderboard, requests) = coroutineScope {
+                    val leaderboard = async { api.leaderboard(timeZone()) }
                     val requests = async { api.friendRequests() }
-                    list.await() to requests.await()
+                    leaderboard.await() to requests.await()
                 }
                 friends = friends.copy(
-                    friends = list,
+                    leaderboard = leaderboard,
                     incoming = requests.incoming,
                     outgoing = requests.outgoing,
                     loaded = true,
@@ -294,7 +313,7 @@ class AppViewModel(
     private suspend fun onNotification(notification: Notification) {
         val item = FeedItem(nextFeedId++, notification, Clock.System.now())
         feed = feed.copy(items = (listOf(item) + feed.items).take(MAX_FEED_ITEMS))
-        if (notification !is Notification.FriendDrank) refreshFriends()
+        refreshFriends()
         _messages.send(notification.describe())
     }
 
@@ -352,6 +371,7 @@ class AppViewModel(
                 stats = stats.copy(working = false)
             }
             refreshStats()
+            refreshFriends()
         }
     }
 
@@ -385,6 +405,22 @@ class AppViewModel(
                 if (e is CancellationException) throw e
             }
         }
+    }
+
+    /** Moves the reminder to follow the latest drink, or removes it while logged out or turned off. */
+    private fun planReminder() {
+        val reminders = reminders ?: return
+        if (user == null) return reminders.schedule(null)
+        val today = stats.stats
+        reminders.schedule(
+            nextReminder(
+                reminderSettings,
+                now = Clock.System.now(),
+                lastDrinkAt = stats.recent.firstOrNull()?.let { Instant.fromEpochMilliseconds(it.timestamp) },
+                goalReached = today != null && today.todayMl >= today.goalMl,
+                zone = TimeZone.currentSystemDefault(),
+            ),
+        )
     }
 
     /** The device's time zone, which decides where the server draws the line between days. */

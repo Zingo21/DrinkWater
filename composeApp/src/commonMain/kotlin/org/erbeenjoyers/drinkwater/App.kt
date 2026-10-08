@@ -22,11 +22,21 @@ import org.erbeenjoyers.drinkwater.ui.MainScreen
  * @param settings secure storage for the login session, see [SessionStore].
  * @param serverUrl root URL of the DrinkWater server, e.g. `http://10.0.2.2:8080`.
  * @param push where this device's push token comes from, or null where push isn't set up.
+ * @param reminders shows the user's own drink reminders, or null where they aren't supported.
+ * @param onRemindersEnabled called when the user turns reminders on, e.g. to ask for permission to notify.
  */
 @Composable
-fun App(settings: Settings, serverUrl: String, push: PushRegistration? = null) {
+fun App(
+    settings: Settings,
+    serverUrl: String,
+    push: PushRegistration? = null,
+    reminders: ReminderScheduler? = null,
+    onRemindersEnabled: () -> Unit = {},
+) {
     MaterialTheme {
-        val viewModel = viewModel { AppViewModel(DrinkWaterApi(serverUrl), SessionStore(settings), push) }
+        val viewModel = viewModel {
+            AppViewModel(DrinkWaterApi(serverUrl), SessionStore(settings), ReminderStore(settings), push, reminders)
+        }
         val scaffoldState = rememberScaffoldState()
 
         LaunchedEffect(viewModel) {
@@ -48,7 +58,7 @@ fun App(settings: Settings, serverUrl: String, push: PushRegistration? = null) {
                     onInputChanged = viewModel::clearAuthError,
                 )
             } else {
-                MainScreen(user, viewModel, scaffoldState)
+                MainScreen(user, viewModel, scaffoldState, onRemindersEnabled)
             }
         }
     }

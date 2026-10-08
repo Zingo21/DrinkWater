@@ -8,6 +8,7 @@ import androidx.compose.material.BadgedBox
 import androidx.compose.material.BottomNavigation
 import androidx.compose.material.BottomNavigationItem
 import androidx.compose.material.Icon
+import androidx.compose.material.IconButton
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.material.ScaffoldState
@@ -19,9 +20,11 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -37,10 +40,15 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     Feed("Feed", Icons.Filled.Notifications),
 }
 
-/** Everything a logged-in [user] sees: the tabs and the bars around them. */
+/**
+ * Everything a logged-in [user] sees: the tabs and the bars around them.
+ *
+ * @param onRemindersEnabled called when the user turns their drink reminders on.
+ */
 @Composable
-fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldState) {
+fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldState, onRemindersEnabled: () -> Unit) {
     var tab by rememberSaveable { mutableStateOf(Tab.Drink) }
+    var editingReminders by remember { mutableStateOf(false) }
 
     // Live notifications only while the app is on screen.
     LifecycleStartEffect(viewModel) {
@@ -54,6 +62,11 @@ fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldSt
             TopAppBar(
                 title = { Text("Hi, ${user.username}") },
                 actions = {
+                    if (viewModel.canRemind) {
+                        IconButton(onClick = { editingReminders = true }) {
+                            Icon(Icons.Filled.Settings, contentDescription = "Reminders")
+                        }
+                    }
                     TextButton(onClick = viewModel::logout) {
                         Text("Log out", color = MaterialTheme.colors.onPrimary)
                     }
@@ -96,6 +109,7 @@ fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldSt
 
                 Tab.Friends -> FriendsScreen(
                     state = viewModel.friends,
+                    userId = user.id,
                     onAddFriend = viewModel::addFriend,
                     onAccept = viewModel::acceptRequest,
                     onDeleteRequest = viewModel::deleteRequest,
@@ -107,5 +121,17 @@ fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldSt
                 Tab.Feed -> FeedScreen(viewModel.feed)
             }
         }
+    }
+
+    if (editingReminders) {
+        RemindersDialog(
+            current = viewModel.reminderSettings,
+            onSave = { settings ->
+                viewModel.changeReminderSettings(settings)
+                if (settings.enabled) onRemindersEnabled()
+                editingReminders = false
+            },
+            onDismiss = { editingReminders = false },
+        )
     }
 }

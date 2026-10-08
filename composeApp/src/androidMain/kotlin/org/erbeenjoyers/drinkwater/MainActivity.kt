@@ -20,10 +20,17 @@ class MainActivity : ComponentActivity() {
 
         val settings = createSecureSettings(applicationContext)
         val push = AndroidPush(applicationContext)
-        if (push.isConfigured) askForNotificationPermission()
+        val reminders = AndroidReminders(applicationContext)
+        if (push.isConfigured || ReminderStore(settings).load().enabled) askForNotificationPermission()
 
         setContent {
-            App(settings, BuildConfig.SERVER_URL, push)
+            App(
+                settings,
+                BuildConfig.SERVER_URL,
+                push,
+                reminders,
+                onRemindersEnabled = ::askForNotificationPermission,
+            )
         }
     }
 

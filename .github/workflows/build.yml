@@ -25,6 +25,9 @@ jobs:
       - name: Server tests
         run: ./gradlew :server:test
 
+      - name: App tests
+        run: ./gradlew :composeApp:testDebugUnitTest
+
       - name: Build Android app
         run: ./gradlew :composeApp:assembleDebug
 

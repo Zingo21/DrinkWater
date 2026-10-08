@@ -39,6 +39,7 @@ import org.erbeenjoyers.drinkwater.api.FriendRequestCreate
 import org.erbeenjoyers.drinkwater.api.FriendRequestCreateResponse
 import org.erbeenjoyers.drinkwater.api.FriendRequestResult
 import org.erbeenjoyers.drinkwater.api.FriendRequestsResponse
+import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.LoginRequest
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.RegisterRequest
@@ -355,6 +356,44 @@ class ApiTest {
         assertEquals(HttpStatusCode.NotFound, assertFailsWith<ApiError> { bertil.deleteDrinkLog(history.first().id) }.status)
         anna.deleteDrinkLog(history.first().id)
         assertEquals(830, anna.stats(zone).todayMl)
+    }
+
+    @Test
+    fun `the leaderboard ranks you and your friends by what you drank today`() = apiTest { client ->
+        val anna = DrinkWaterApi("http://localhost", client)
+        val bertil = DrinkWaterApi("http://localhost", client)
+        val cecilia = DrinkWaterApi("http://localhost", client)
+        val david = DrinkWaterApi("http://localhost", client)
+        val annaUser = anna.register("anna", "password123").user
+        val bertilUser = bertil.register("bertil", "password123").user
+        val ceciliaUser = cecilia.register("cecilia", "password123").user
+        val davidUser = david.register("david", "password123").user
+        bertil.acceptFriendRequest(anna.sendFriendRequest("bertil").request.id)
+        cecilia.acceptFriendRequest(anna.sendFriendRequest("cecilia").request.id)
+        // A request that hasn't been accepted doesn't put anyone on the board.
+        anna.sendFriendRequest("david")
+        val water = anna.drinks().first()
+        val zone = "Europe/Stockholm"
+
+        assertEquals(listOf(LeaderboardEntryDto(davidUser, 0, DEFAULT_DAILY_GOAL_ML, 0)), david.leaderboard(zone))
+
+        bertil.setDailyGoal(500)
+        bertil.logDrink(water.id, 600, zone)
+        anna.logDrink(water.id, 400, zone)
+        anna.logDrink(water.id, 500, zone)
+        david.logDrink(water.id, 5_000, zone)
+
+        assertEquals(
+            listOf(
+                LeaderboardEntryDto(annaUser, 900, DEFAULT_DAILY_GOAL_ML, 0),
+                LeaderboardEntryDto(bertilUser, 600, 500, 1),
+                LeaderboardEntryDto(ceciliaUser, 0, DEFAULT_DAILY_GOAL_ML, 0),
+            ),
+            anna.leaderboard(zone),
+        )
+        // Bertil and Cecilia aren't friends with each other.
+        assertEquals(listOf(annaUser, bertilUser), bertil.leaderboard(zone).map { it.user })
+        assertEquals(HttpStatusCode.BadRequest, assertFailsWith<ApiError> { anna.leaderboard("Nowhere/City") }.status)
     }
 
     @Test

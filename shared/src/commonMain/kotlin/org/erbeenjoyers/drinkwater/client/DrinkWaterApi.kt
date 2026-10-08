@@ -45,6 +45,7 @@ import org.erbeenjoyers.drinkwater.api.FriendRequestCreate
 import org.erbeenjoyers.drinkwater.api.FriendRequestCreateResponse
 import org.erbeenjoyers.drinkwater.api.FriendRequestsResponse
 import org.erbeenjoyers.drinkwater.api.GoalDto
+import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.LoginRequest
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.RegisterRequest
@@ -134,6 +135,16 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
         }.result()
 
     suspend fun friends(): List<UserDto> = client.get("/friends") { authorize() }.result()
+
+    /**
+     * The logged-in user and their friends, whoever has drunk the most today first. Days are
+     * drawn in [timeZone] for everyone (UTC if null).
+     */
+    suspend fun leaderboard(timeZone: String? = null): List<LeaderboardEntryDto> =
+        client.get("/friends/leaderboard") {
+            authorize()
+            parameter("tz", timeZone)
+        }.result()
 
     suspend fun removeFriend(friendId: Int) {
         client.delete("/friends/$friendId") { authorize() }.result<Unit>()

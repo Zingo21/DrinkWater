@@ -40,6 +40,7 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | POST 🔒 | `/friends/requests/{id}/accept` | Accept an incoming request |
 | DELETE 🔒 | `/friends/requests/{id}` | Decline an incoming or cancel an outgoing request |
 | POST 🔒 | `/friends/{friendId}/nudge` | Remind a friend to drink (at most once every five minutes per friend) |
+| GET 🔒 | `/friends/leaderboard` | You and your friends with today's total, goal and streak, most drunk today first. `tz` as for `/me/stats` |
 | GET | `/drinks` | Available drinks |
 | POST 🔒 | `/drink` | Log a drink with an optional `amountMl` (default 250) and `timeZone`; friends get notified, also when it takes you past your daily goal |
 | GET 🔒 | `/me/drinks` | Your own logs, newest first. Optional `from`, `to` (epoch ms) and `limit` |
@@ -76,3 +77,10 @@ through Firebase Cloud Messaging (FCM). Push is off until you connect a Firebase
 
 Without these the app and the server work as before, just without push. The iOS app does not register
 for push yet.
+
+## Reminders
+
+The Android app can remind you to drink when you haven't logged anything for a while. Turn it on under
+the settings icon in the top bar, where you also choose how long to wait and between which hours
+reminders are allowed. Reminders are scheduled on the phone itself, so they need neither the server
+nor Firebase, and they stop for the day once you reach your goal. The iOS app has no reminders yet.

@@ -31,6 +31,10 @@ fun Route.drinkRoutes(drinks: DrinkService, users: UserService) {
             call.respond(HttpStatusCode.Created, drinks.logDrink(call.userId, request))
         }
 
+        get("/friends/leaderboard") {
+            call.respond(drinks.leaderboard(call.userId, call.request.queryParameters["tz"]))
+        }
+
         route("/me") {
             get("/drinks") {
                 val limit = call.longQuery("limit") ?: DEFAULT_HISTORY_LIMIT

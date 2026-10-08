@@ -9,6 +9,7 @@ import org.erbeenjoyers.drinkwater.api.DrinkDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogRequest
+import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.MAX_AMOUNT_ML
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.StatsDto
@@ -111,6 +112,33 @@ class DrinkService(
             dailyGoal(userId) to logs
         }
         return computeStats(logs, goalMl, zone, today)
+    }
+
+    /**
+     * [userId] and their friends, whoever has drunk the most today first. Everyone's days are
+     * drawn in [timeZone], the time zone of the user who is looking.
+     */
+    suspend fun leaderboard(userId: Int, timeZone: String?): List<LeaderboardEntryDto> {
+        val zone = parseTimeZone(timeZone)
+        val today = Instant.now().atZone(zone).toLocalDate()
+        val since = startOfDayMillis(today.minusDays(STREAK_LOOKBACK_DAYS), zone)
+        val ids = friends.friendIds(userId) + userId
+
+        return db.query {
+            val logs = DrinkLogs.select(DrinkLogs.userId, DrinkLogs.timestamp, DrinkLogs.amountMl)
+                .where { (DrinkLogs.userId inList ids) and (DrinkLogs.timestamp greaterEq since) }
+                .groupBy({ it[DrinkLogs.userId] }) { LoggedAmount(it[DrinkLogs.timestamp], it[DrinkLogs.amountMl]) }
+            Users.selectAll().where { Users.id inList ids }
+                .map {
+                    val stats = computeStats(logs[it[Users.id]].orEmpty(), it[Users.dailyGoalMl], zone, today)
+                    LeaderboardEntryDto(it.toUserDto(), stats.todayMl, stats.goalMl, stats.streakDays)
+                }
+                .sortedWith(
+                    compareByDescending<LeaderboardEntryDto> { it.todayMl }
+                        .thenByDescending { it.streakDays }
+                        .thenBy { it.user.username },
+                )
+        }
     }
 
     private fun Transaction.dailyGoal(userId: Int): Int =
