@@ -6,12 +6,14 @@ import kotlin.time.Duration.Companion.days
 data class AppConfig(
     val databaseUrl: String,
     val jwt: JwtConfig,
+    /** Path to the Firebase service account key used to send push notifications. Push is off when null. */
+    val fcmServiceAccountFile: String? = null,
 ) {
     companion object {
         private const val DEV_JWT_SECRET = "dev-only-secret-change-me"
 
         /**
-         * Reads `DATABASE_URL` and `JWT_SECRET` from the environment. Outside development
+         * Reads `DATABASE_URL`, `JWT_SECRET` and `FCM_SERVICE_ACCOUNT_FILE` from the environment. Outside development
          * mode `JWT_SECRET` is required, so a real deployment never signs tokens with the dev secret.
          */
         fun fromEnvironment(developmentMode: Boolean): AppConfig {
@@ -25,6 +27,7 @@ data class AppConfig(
             return AppConfig(
                 databaseUrl = System.getenv("DATABASE_URL") ?: "jdbc:sqlite:drinkwater.db",
                 jwt = JwtConfig(secret = secret),
+                fcmServiceAccountFile = System.getenv("FCM_SERVICE_ACCOUNT_FILE"),
             )
         }
     }

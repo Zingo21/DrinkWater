@@ -3,12 +3,25 @@ package services
 import database.Db
 import database.DrinkLogs
 import database.Drinks
+import database.Users
 import io.ktor.http.HttpStatusCode
 import org.erbeenjoyers.drinkwater.api.DrinkDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogDto
+import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
+import org.erbeenjoyers.drinkwater.api.DrinkLogRequest
+import org.erbeenjoyers.drinkwater.api.MAX_AMOUNT_ML
 import org.erbeenjoyers.drinkwater.api.Notification
+import org.erbeenjoyers.drinkwater.api.StatsDto
+import org.jetbrains.exposed.sql.SortOrder
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.Transaction
+import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.andWhere
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.sum
+import java.time.Instant
 
 class DrinkService(
     private val db: Db,
@@ -21,24 +34,85 @@ class DrinkService(
     }
 
     /** Logs a drink for [userId] and notifies that user's friends. */
-    suspend fun logDrink(userId: Int, drinkId: Int): DrinkLogDto {
+    suspend fun logDrink(userId: Int, request: DrinkLogRequest): DrinkLogDto {
+        if (request.amountMl !in 1..MAX_AMOUNT_ML) {
+            throw ApiException(HttpStatusCode.BadRequest, "Amount must be between 1 and $MAX_AMOUNT_ML ml")
+        }
+        val zone = parseTimeZone(request.timeZone)
         val timestamp = System.currentTimeMillis()
-        val (drink, log) = db.query {
-            val drink = Drinks.selectAll().where { Drinks.id eq drinkId }.singleOrNull()
+        val today = Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate()
+
+        val (drink, goalMl, log) = db.query {
+            val drink = Drinks.selectAll().where { Drinks.id eq request.drinkId }.singleOrNull()
                 ?.let { DrinkDto(it[Drinks.id], it[Drinks.name]) }
                 ?: throw ApiException(HttpStatusCode.NotFound, "Drink not found")
+            val goalMl = dailyGoal(userId)
+            val total = DrinkLogs.amountMl.sum()
+            val before = DrinkLogs.select(total)
+                .where { (DrinkLogs.userId eq userId) and (DrinkLogs.timestamp greaterEq startOfDayMillis(today, zone)) }
+                .single()[total] ?: 0
+
             val id = DrinkLogs.insert {
                 it[DrinkLogs.userId] = userId
-                it[DrinkLogs.drinkId] = drinkId
+                it[drinkId] = request.drinkId
                 it[DrinkLogs.timestamp] = timestamp
+                it[amountMl] = request.amountMl
             } get DrinkLogs.id
-            drink to DrinkLogDto(id, userId, drinkId, timestamp)
+            val goalReached = before < goalMl && before + request.amountMl >= goalMl
+            Triple(drink, goalMl, DrinkLogDto(id, userId, request.drinkId, timestamp, request.amountMl, goalReached))
         }
 
         val user = users.findById(userId)
         if (user != null) {
-            notifications.sendToAll(friends.friendIds(userId), Notification.FriendDrank(user, drink, timestamp))
+            val friendIds = friends.friendIds(userId)
+            notifications.sendToAll(friendIds, Notification.FriendDrank(user, drink, timestamp, request.amountMl))
+            if (log.goalReached) {
+                notifications.sendToAll(friendIds, Notification.FriendReachedGoal(user, goalMl))
+            }
         }
         return log
     }
+
+    /** [userId]'s own logs, newest first. [from] is inclusive and [to] exclusive, both in epoch milliseconds. */
+    suspend fun history(userId: Int, from: Long?, to: Long?, limit: Int): List<DrinkLogEntryDto> = db.query {
+        val query = (DrinkLogs innerJoin Drinks).selectAll().where { DrinkLogs.userId eq userId }
+        if (from != null) query.andWhere { DrinkLogs.timestamp greaterEq from }
+        if (to != null) query.andWhere { DrinkLogs.timestamp less to }
+        query.orderBy(DrinkLogs.timestamp to SortOrder.DESC, DrinkLogs.id to SortOrder.DESC)
+            .limit(limit)
+            .map {
+                DrinkLogEntryDto(
+                    id = it[DrinkLogs.id],
+                    drink = DrinkDto(it[Drinks.id], it[Drinks.name]),
+                    amountMl = it[DrinkLogs.amountMl],
+                    timestamp = it[DrinkLogs.timestamp],
+                )
+            }
+    }
+
+    /** Removes one of [userId]'s own logs, e.g. one that was added by mistake. */
+    suspend fun deleteLog(userId: Int, logId: Int) {
+        val deleted = db.query {
+            DrinkLogs.deleteWhere { (id eq logId) and (DrinkLogs.userId eq userId) }
+        }
+        if (deleted == 0) throw ApiException(HttpStatusCode.NotFound, "Drink log not found")
+    }
+
+    /** Today's total, the streak and the last week for [userId], with days as they fall in [timeZone]. */
+    suspend fun stats(userId: Int, timeZone: String?): StatsDto {
+        val zone = parseTimeZone(timeZone)
+        val today = Instant.now().atZone(zone).toLocalDate()
+        val since = startOfDayMillis(today.minusDays(STREAK_LOOKBACK_DAYS), zone)
+
+        val (goalMl, logs) = db.query {
+            val logs = DrinkLogs.select(DrinkLogs.timestamp, DrinkLogs.amountMl)
+                .where { (DrinkLogs.userId eq userId) and (DrinkLogs.timestamp greaterEq since) }
+                .map { LoggedAmount(it[DrinkLogs.timestamp], it[DrinkLogs.amountMl]) }
+            dailyGoal(userId) to logs
+        }
+        return computeStats(logs, goalMl, zone, today)
+    }
+
+    private fun Transaction.dailyGoal(userId: Int): Int =
+        Users.select(Users.dailyGoalMl).where { Users.id eq userId }.single()[Users.dailyGoalMl]
 }

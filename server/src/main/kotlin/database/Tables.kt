@@ -1,5 +1,8 @@
 package database
 
+import org.erbeenjoyers.drinkwater.api.DEFAULT_AMOUNT_ML
+import org.erbeenjoyers.drinkwater.api.DEFAULT_DAILY_GOAL_ML
+import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.jetbrains.exposed.sql.Table
 
 object Users : Table() {
@@ -8,6 +11,7 @@ object Users : Table() {
     val username = varchar("username", 30).uniqueIndex()
     val passwordHash = varchar("password_hash", 100)
     val createdAt = long("created_at")
+    val dailyGoalMl = integer("daily_goal_ml").default(DEFAULT_DAILY_GOAL_ML)
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -22,6 +26,7 @@ object DrinkLogs : Table() {
     val userId = integer("user_id").references(Users.id)
     val drinkId = integer("drink_id").references(Drinks.id)
     val timestamp = long("timestamp")
+    val amountMl = integer("amount_ml").default(DEFAULT_AMOUNT_ML)
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -42,4 +47,14 @@ object Friendships : Table() {
     init {
         uniqueIndex(requesterId, addresseeId)
     }
+}
+
+/** Devices that get a user's push notifications. A device token belongs to one user at a time. */
+object DeviceTokens : Table() {
+    val id = integer("id").autoIncrement()
+    val userId = integer("user_id").references(Users.id).index()
+    val token = varchar("token", 512).uniqueIndex()
+    val platform = enumerationByName<DevicePlatform>("platform", 10)
+    val updatedAt = long("updated_at")
+    override val primaryKey = PrimaryKey(id)
 }

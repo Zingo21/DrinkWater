@@ -21,12 +21,18 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
+import java.util.concurrent.ConcurrentHashMap
+
+const val NUDGE_COOLDOWN_MS = 5 * 60 * 1000L
 
 class FriendService(
     private val db: Db,
     private val users: UserService,
     private val notifications: NotificationService,
 ) {
+    /** When each (from, to) pair last nudged. */
+    private val lastNudges = ConcurrentHashMap<Pair<Int, Int>, Long>()
+
     /**
      * Sends a friend request to [username]. If that user has already sent a request
      * to [fromUserId], it is accepted instead, so both users end up as friends.
@@ -125,6 +131,31 @@ class FriendService(
             }
         }
         if (deleted == 0) throw ApiException(HttpStatusCode.NotFound, "Friend not found")
+    }
+
+    /**
+     * Reminds [friendId] to drink. To keep it friendly, the same friend can only be nudged once
+     * every [NUDGE_COOLDOWN_MS]; the cooldowns are kept in memory and start over when the server restarts.
+     */
+    suspend fun nudge(userId: Int, friendId: Int) {
+        val areFriends = db.query {
+            !Friendships.selectAll()
+                .where { (Friendships.status eq FriendshipStatus.ACCEPTED) and between(userId, friendId) }
+                .empty()
+        }
+        val user = users.findById(userId)
+        if (!areFriends || user == null) throw ApiException(HttpStatusCode.NotFound, "Friend not found")
+
+        val now = System.currentTimeMillis()
+        var allowed = false
+        lastNudges.compute(userId to friendId) { _, last ->
+            allowed = last == null || now - last >= NUDGE_COOLDOWN_MS
+            if (allowed) now else last
+        }
+        if (!allowed) {
+            throw ApiException(HttpStatusCode.TooManyRequests, "You nudged them just now. Give them a few minutes.")
+        }
+        notifications.send(friendId, Notification.Nudge(user))
     }
 
     private fun between(a: Int, b: Int): Op<Boolean> =

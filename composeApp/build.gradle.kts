@@ -9,6 +9,12 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+// Push notifications need the Firebase project's google-services.json in this directory.
+// Without it the app builds and runs as usual, just without push.
+if (file("google-services.json").exists()) {
+    apply(plugin = libs.plugins.googleServices.get().pluginId)
+}
+
 kotlin {
     androidTarget {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
@@ -33,6 +39,8 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.security.crypto)
+            implementation(libs.firebase.messaging)
         }
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -42,7 +50,10 @@ kotlin {
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodel)
+            implementation(libs.androidx.lifecycle.viewmodel.compose)
             implementation(libs.androidx.lifecycle.runtime.compose)
+            implementation(libs.kotlinx.datetime)
+            implementation(libs.multiplatform.settings)
             implementation(projects.shared)
         }
     }
@@ -58,6 +69,14 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+
+        // Where the app finds the server. 10.0.2.2 is the emulator's alias for the host machine;
+        // pass -Pdrinkwater.serverUrl=http://<your-ip>:8080 to run against it from a real device.
+        val serverUrl = providers.gradleProperty("drinkwater.serverUrl").getOrElse("http://10.0.2.2:8080")
+        buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
+    }
+    buildFeatures {
+        buildConfig = true
     }
     packaging {
         resources {

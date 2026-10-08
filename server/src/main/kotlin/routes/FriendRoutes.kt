@@ -5,14 +5,12 @@ import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
-import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import org.erbeenjoyers.drinkwater.api.FriendRequestCreate
 import org.erbeenjoyers.drinkwater.api.FriendRequestResult
-import services.ApiException
 import services.FriendService
 
 fun Route.friendRoutes(friends: FriendService) {
@@ -24,6 +22,11 @@ fun Route.friendRoutes(friends: FriendService) {
 
             delete("/{friendId}") {
                 friends.removeFriend(call.userId, call.intParameter("friendId"))
+                call.respond(HttpStatusCode.NoContent)
+            }
+
+            post("/{friendId}/nudge") {
+                friends.nudge(call.userId, call.intParameter("friendId"))
                 call.respond(HttpStatusCode.NoContent)
             }
 
@@ -51,6 +54,3 @@ fun Route.friendRoutes(friends: FriendService) {
         }
     }
 }
-
-private fun RoutingCall.intParameter(name: String): Int =
-    parameters[name]?.toIntOrNull() ?: throw ApiException(HttpStatusCode.BadRequest, "Invalid $name")

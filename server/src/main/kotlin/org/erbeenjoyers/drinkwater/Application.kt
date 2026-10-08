@@ -23,11 +23,14 @@ import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.pingPeriod
 import kotlinx.serialization.json.Json
 import org.erbeenjoyers.drinkwater.api.ErrorResponse
+import push.PushSender
 import routes.authRoutes
+import routes.deviceRoutes
 import routes.drinkRoutes
 import routes.friendRoutes
 import routes.notificationRoutes
 import services.ApiException
+import services.DeviceService
 import services.DrinkService
 import services.FriendService
 import services.NotificationService
@@ -40,7 +43,7 @@ fun main() {
     }.start(wait = true)
 }
 
-fun Application.module(config: AppConfig) {
+fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConfig(config)) {
     val json = Json { ignoreUnknownKeys = true }
 
     install(WebSockets) {
@@ -62,7 +65,9 @@ fun Application.module(config: AppConfig) {
 
     val db = DatabaseFactory.init(config.databaseUrl)
     val jwtService = JwtService(config.jwt)
-    val notificationService = NotificationService(json)
+    val deviceService = DeviceService(db)
+    // The application is the scope, so pushes still on their way are cancelled when the server stops.
+    val notificationService = NotificationService(json, deviceService, push, pushScope = this)
     val userService = UserService(db)
     val friendService = FriendService(db, userService, notificationService)
     val drinkService = DrinkService(db, userService, friendService, notificationService)
@@ -89,7 +94,8 @@ fun Application.module(config: AppConfig) {
 
         authRoutes(userService, jwtService)
         friendRoutes(friendService)
-        drinkRoutes(drinkService)
+        drinkRoutes(drinkService, userService)
         notificationRoutes(notificationService)
+        deviceRoutes(deviceService)
     }
 }

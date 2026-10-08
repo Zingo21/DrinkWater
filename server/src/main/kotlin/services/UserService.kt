@@ -4,10 +4,14 @@ import auth.PasswordHasher
 import database.Db
 import database.Users
 import io.ktor.http.HttpStatusCode
+import org.erbeenjoyers.drinkwater.api.GoalDto
+import org.erbeenjoyers.drinkwater.api.MAX_DAILY_GOAL_ML
+import org.erbeenjoyers.drinkwater.api.MIN_DAILY_GOAL_ML
 import org.erbeenjoyers.drinkwater.api.UserDto
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.update
 
 class UserService(private val db: Db) {
     private val usernamePattern = Regex("^[a-z0-9_.]{3,30}$")
@@ -56,6 +60,19 @@ class UserService(private val db: Db) {
 
     suspend fun findByUsername(username: String): UserDto? = db.query {
         Users.selectAll().where { Users.username eq normalize(username) }.singleOrNull()?.toUserDto()
+    }
+
+    suspend fun setDailyGoal(userId: Int, dailyGoalMl: Int): GoalDto {
+        if (dailyGoalMl !in MIN_DAILY_GOAL_ML..MAX_DAILY_GOAL_ML) {
+            throw ApiException(
+                HttpStatusCode.BadRequest,
+                "Daily goal must be between $MIN_DAILY_GOAL_ML and $MAX_DAILY_GOAL_ML ml",
+            )
+        }
+        db.query {
+            Users.update({ Users.id eq userId }) { it[Users.dailyGoalMl] = dailyGoalMl }
+        }
+        return GoalDto(dailyGoalMl)
     }
 
     private fun normalize(username: String) = username.trim().lowercase()
