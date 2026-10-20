@@ -33,6 +33,8 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | POST | `/auth/register` | Create an account, returns a token |
 | POST | `/auth/login` | Log in, returns a token |
 | GET 🔒 | `/me` | The logged-in user |
+| PUT 🔒 | `/me/password` | Change password; returns a new token and logs out every other device |
+| DELETE 🔒 | `/me` | Delete the account and everything in it (the password is asked for again) |
 | GET 🔒 | `/friends` | List friends |
 | DELETE 🔒 | `/friends/{friendId}` | Remove a friend |
 | GET 🔒 | `/friends/requests` | Incoming and outgoing friend requests |
@@ -52,6 +54,20 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
 
 Run the server tests with `./gradlew :server:test`.
+
+### When a friend is locked out
+
+There is no e-mail, so a forgotten password can't be reset from the app. Whoever runs the server
+gives the user a new password instead:
+
+```
+./gradlew :server:run --args="reset-password <username>"
+```
+
+or, with an installed server (`./gradlew :server:installDist`), `server/build/install/server/bin/server reset-password <username>`.
+Run it from the same directory, or with the same `DATABASE_URL`, as the server. It prints a random password,
+logs the user out on all devices and can run while the server is up. The user can then log in and pick
+their own password under the account menu (the icon at the top right).
 
 ## Running the app against the server
 

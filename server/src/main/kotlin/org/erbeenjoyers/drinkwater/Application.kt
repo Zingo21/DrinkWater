@@ -1,6 +1,7 @@
 package org.erbeenjoyers.drinkwater
 
 import auth.JwtService
+import auth.TOKEN_VERSION_CLAIM
 import auth.UserPrincipal
 import config.AppConfig
 import database.DatabaseFactory
@@ -35,9 +36,12 @@ import services.DrinkService
 import services.FriendService
 import services.NotificationService
 import services.UserService
+import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.seconds
 
-fun main() {
+fun main(args: Array<String>) {
+    if (args.isNotEmpty()) exitProcess(runCommand(args.toList()))
+
     embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
         module(AppConfig.fromEnvironment(developmentMode))
     }.start(wait = true)
@@ -77,9 +81,10 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
             realm = config.jwt.realm
             verifier(jwtService.verifier)
             validate { credential ->
-                credential.payload.subject?.toIntOrNull()
-                    ?.takeIf { userService.findById(it) != null }
-                    ?.let { UserPrincipal(it) }
+                val userId = credential.payload.subject?.toIntOrNull()
+                val version = credential.payload.getClaim(TOKEN_VERSION_CLAIM).asInt() ?: 0
+                // Rejects tokens of deleted users and tokens from before the latest password change.
+                if (userId != null && userService.tokenVersion(userId) == version) UserPrincipal(userId) else null
             }
             challenge { _, _ ->
                 call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Missing or invalid token"))
@@ -92,7 +97,7 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
             call.respondText("Drink Water API is running 🚀")
         }
 
-        authRoutes(userService, jwtService)
+        authRoutes(userService, jwtService, notificationService)
         friendRoutes(friendService)
         drinkRoutes(drinkService, userService)
         notificationRoutes(notificationService)

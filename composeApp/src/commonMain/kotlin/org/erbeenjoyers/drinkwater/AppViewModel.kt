@@ -33,7 +33,8 @@ import org.erbeenjoyers.drinkwater.api.describe
 import org.erbeenjoyers.drinkwater.client.ApiError
 import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
 
-data class AuthState(val busy: Boolean = false, val error: String? = null)
+/** [notice] is news for the user that isn't an error, e.g. that their account was deleted. */
+data class AuthState(val busy: Boolean = false, val error: String? = null, val notice: String? = null)
 
 data class HomeState(
     val drinks: List<DrinkDto> = emptyList(),
@@ -63,6 +64,16 @@ data class FriendsState(
     val loadError: String? = null,
     /** True while a change (add, accept, decline, remove) is being sent to the server. */
     val working: Boolean = false,
+)
+
+enum class AccountDialog { ChangePassword, DeleteAccount }
+
+data class AccountState(
+    /** The account dialog that is open, if any. */
+    val dialog: AccountDialog? = null,
+    /** True while the change is being sent to the server. */
+    val busy: Boolean = false,
+    val error: String? = null,
 )
 
 data class FeedItem(val id: Long, val notification: Notification, val receivedAt: Instant)
@@ -97,6 +108,8 @@ class AppViewModel(
         private set
     var reminderSettings by mutableStateOf(reminderStore.load())
         private set
+    var account by mutableStateOf(AccountState())
+        private set
 
     /** Whether this device can remind the user to drink at all. */
     val canRemind: Boolean get() = reminders != null
@@ -130,11 +143,37 @@ class AppViewModel(
     fun register(username: String, password: String) = authenticate { api.register(username.trim(), password) }
 
     fun clearAuthError() {
-        if (auth.error != null) auth = auth.copy(error = null)
+        if (auth.error != null || auth.notice != null) auth = auth.copy(error = null, notice = null)
     }
 
     fun logout() {
         stopPushToThisDevice()
+        endSession()
+    }
+
+    fun openAccountDialog(dialog: AccountDialog) {
+        account = AccountState(dialog)
+    }
+
+    fun closeAccountDialog() {
+        if (!account.busy) account = AccountState()
+    }
+
+    /** Other devices are logged out; this one carries on with the new token the server sends back. */
+    fun changePassword(currentPassword: String, newPassword: String) = changeAccount {
+        sessions.save(api.changePassword(currentPassword, newPassword))
+        _messages.send("Password changed. Your other devices have been logged out.")
+    }
+
+    fun deleteAccount(password: String) = changeAccount {
+        api.deleteAccount(password)
+        // The server has already forgotten this device's push token along with the account.
+        registeredPushToken = null
+        endSession()
+        auth = AuthState(notice = "Your account has been deleted.")
+    }
+
+    private fun endSession() {
         sessionJob.cancel()
         sessionJob = newSessionJob()
         listening = null
@@ -338,6 +377,25 @@ class AppViewModel(
     }
 
     /** Runs [change], shows the message it returns and then reloads the friend lists. */
+    /** Not a session coroutine, so that deleting the account can end the session it runs in. */
+    private fun changeAccount(change: suspend () -> Unit) {
+        if (account.busy) return
+        account = account.copy(busy = true, error = null)
+        viewModelScope.launch {
+            try {
+                change()
+                account = AccountState()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (expireSessionIfUnauthorized(e)) {
+                    account = AccountState()
+                } else {
+                    account = account.copy(busy = false, error = e.userMessage())
+                }
+            }
+        }
+    }
+
     private fun changeFriends(change: suspend () -> String?) {
         if (friends.working) return
         friends = friends.copy(working = true)

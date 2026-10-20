@@ -475,4 +475,56 @@ class ApiTest {
             assertTrue(push.drain().isEmpty())
         }
     }
+
+    @Test
+    fun `changing the password logs out other devices`() = apiTest { client ->
+        val phone = DrinkWaterApi("http://localhost", client)
+        val tablet = DrinkWaterApi("http://localhost", client)
+        val user = phone.register("anna", "password123").user
+        tablet.login("anna", "password123")
+
+        val wrong = assertFailsWith<ApiError> { phone.changePassword("not-my-password", "new-password1") }
+        assertEquals(HttpStatusCode.Forbidden, wrong.status)
+        val tooShort = assertFailsWith<ApiError> { phone.changePassword("password123", "short") }
+        assertEquals(HttpStatusCode.BadRequest, tooShort.status)
+
+        val oldToken = phone.token
+        assertEquals(user, phone.changePassword("password123", "new-password1").user)
+        assertTrue(phone.token != oldToken)
+
+        // The device that changed it carries on with its new token; the other one has to log in again.
+        assertEquals(user, phone.me())
+        assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.me() }.status)
+
+        assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.login("anna", "password123") }.status)
+        tablet.login("anna", "new-password1")
+        assertEquals(user, tablet.me())
+    }
+
+    @Test
+    fun `deleting the account removes the user and their friendships`() = apiTest { client ->
+        val anna = DrinkWaterApi("http://localhost", client)
+        val bertil = DrinkWaterApi("http://localhost", client)
+        anna.register("anna", "password123")
+        val bertilUser = bertil.register("bertil", "password123").user
+        bertil.acceptFriendRequest(anna.sendFriendRequest("bertil").request.id)
+        anna.logDrink(anna.drinks().first().id)
+        val annaToken = anna.token
+
+        val wrong = assertFailsWith<ApiError> { anna.deleteAccount("wrong-password") }
+        assertEquals(HttpStatusCode.Forbidden, wrong.status)
+
+        anna.deleteAccount("password123")
+
+        assertTrue(bertil.friends().isEmpty())
+        assertEquals(listOf(bertilUser), bertil.leaderboard().map { it.user })
+        assertEquals(HttpStatusCode.NotFound, assertFailsWith<ApiError> { bertil.sendFriendRequest("anna") }.status)
+
+        anna.token = annaToken
+        assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { anna.me() }.status)
+        assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { anna.login("anna", "password123") }.status)
+
+        // The username is free again.
+        anna.register("anna", "password456")
+    }
 }

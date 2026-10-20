@@ -12,6 +12,11 @@ object Users : Table() {
     val passwordHash = varchar("password_hash", 100)
     val createdAt = long("created_at")
     val dailyGoalMl = integer("daily_goal_ml").default(DEFAULT_DAILY_GOAL_ML)
+    /**
+     * Goes up by one each time the password changes. Tokens carry the version they were issued
+     * for and are rejected once it moves on, so a new password logs the account out everywhere else.
+     */
+    val tokenVersion = integer("token_version").default(0)
     override val primaryKey = PrimaryKey(id)
 }
 

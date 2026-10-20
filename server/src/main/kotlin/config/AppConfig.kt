@@ -12,6 +12,8 @@ data class AppConfig(
     companion object {
         private const val DEV_JWT_SECRET = "dev-only-secret-change-me"
 
+        fun databaseUrlFromEnvironment(): String = System.getenv("DATABASE_URL") ?: "jdbc:sqlite:drinkwater.db"
+
         /**
          * Reads `DATABASE_URL`, `JWT_SECRET` and `FCM_SERVICE_ACCOUNT_FILE` from the environment. Outside development
          * mode `JWT_SECRET` is required, so a real deployment never signs tokens with the dev secret.
@@ -25,7 +27,7 @@ data class AppConfig(
                     error("JWT_SECRET must be set when not running in development mode")
                 }
             return AppConfig(
-                databaseUrl = System.getenv("DATABASE_URL") ?: "jdbc:sqlite:drinkwater.db",
+                databaseUrl = databaseUrlFromEnvironment(),
                 jwt = JwtConfig(secret = secret),
                 fcmServiceAccountFile = System.getenv("FCM_SERVICE_ACCOUNT_FILE"),
             )

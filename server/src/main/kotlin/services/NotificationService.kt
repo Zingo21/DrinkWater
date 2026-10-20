@@ -1,6 +1,8 @@
 package services
 
+import io.ktor.websocket.CloseReason
 import io.ktor.websocket.WebSocketSession
+import io.ktor.websocket.close
 import io.ktor.websocket.send
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +40,19 @@ class NotificationService(
         sessions.computeIfPresent(userId) { _, userSessions ->
             userSessions.remove(session)
             userSessions.ifEmpty { null }
+        }
+    }
+
+    /** Closes every open connection of [userId], e.g. when their account is deleted. */
+    suspend fun disconnect(userId: Int) {
+        sessions.remove(userId)?.forEach { session ->
+            try {
+                session.close(CloseReason(CloseReason.Codes.NORMAL, "Account deleted"))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Already gone.
+            }
         }
     }
 

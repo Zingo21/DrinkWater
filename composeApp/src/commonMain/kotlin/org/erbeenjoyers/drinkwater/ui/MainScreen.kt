@@ -13,9 +13,11 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.material.ScaffoldState
 import androidx.compose.material.Text
-import androidx.compose.material.TextButton
+import androidx.compose.material.DropdownMenu
+import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.TopAppBar
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
@@ -30,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.LifecycleStartEffect
+import org.erbeenjoyers.drinkwater.AccountDialog
 import org.erbeenjoyers.drinkwater.AppViewModel
 import org.erbeenjoyers.drinkwater.api.UserDto
 
@@ -67,8 +70,25 @@ fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldSt
                             Icon(Icons.Filled.Settings, contentDescription = "Reminders")
                         }
                     }
-                    TextButton(onClick = viewModel::logout) {
-                        Text("Log out", color = MaterialTheme.colors.onPrimary)
+                    Box {
+                        var menuOpen by remember { mutableStateOf(false) }
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.AccountCircle, contentDescription = "Account")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(onClick = {
+                                menuOpen = false
+                                viewModel.openAccountDialog(AccountDialog.ChangePassword)
+                            }) { Text("Change password") }
+                            DropdownMenuItem(onClick = {
+                                menuOpen = false
+                                viewModel.openAccountDialog(AccountDialog.DeleteAccount)
+                            }) { Text("Delete account", color = MaterialTheme.colors.error) }
+                            DropdownMenuItem(onClick = {
+                                menuOpen = false
+                                viewModel.logout()
+                            }) { Text("Log out") }
+                        }
                     }
                 },
             )
@@ -121,6 +141,20 @@ fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldSt
                 Tab.Feed -> FeedScreen(viewModel.feed)
             }
         }
+    }
+
+    when (viewModel.account.dialog) {
+        AccountDialog.ChangePassword -> ChangePasswordDialog(
+            state = viewModel.account,
+            onChange = viewModel::changePassword,
+            onDismiss = viewModel::closeAccountDialog,
+        )
+        AccountDialog.DeleteAccount -> DeleteAccountDialog(
+            state = viewModel.account,
+            onDelete = viewModel::deleteAccount,
+            onDismiss = viewModel::closeAccountDialog,
+        )
+        null -> Unit
     }
 
     if (editingReminders) {

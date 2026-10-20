@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import org.erbeenjoyers.drinkwater.AuthState
 import org.erbeenjoyers.drinkwater.normalizeServerUrl
@@ -113,6 +114,10 @@ fun AuthScreen(
                 )
             }
 
+            if (state.notice != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(state.notice, modifier = Modifier.fillMaxWidth())
+            }
             if (state.error != null) {
                 Spacer(Modifier.height(12.dp))
                 Text(state.error, color = MaterialTheme.colors.error, modifier = Modifier.fillMaxWidth())
@@ -134,6 +139,13 @@ fun AuthScreen(
                 enabled = !state.busy,
             ) {
                 Text(if (registering) "Already have an account? Log in" else "New here? Create an account")
+            }
+            if (!registering) {
+                Text(
+                    "Forgot your password? Ask whoever runs the DrinkWater server to reset it.",
+                    style = MaterialTheme.typography.caption,
+                    textAlign = TextAlign.Center,
+                )
             }
 
             if (server != null) {

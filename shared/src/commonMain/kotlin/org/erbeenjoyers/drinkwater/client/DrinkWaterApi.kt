@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.erbeenjoyers.drinkwater.api.AuthResponse
+import org.erbeenjoyers.drinkwater.api.ChangePasswordRequest
+import org.erbeenjoyers.drinkwater.api.DeleteAccountRequest
 import org.erbeenjoyers.drinkwater.api.DEFAULT_AMOUNT_ML
 import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
@@ -95,6 +97,26 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
             .also { token = it.token }
 
     suspend fun me(): UserDto = client.get("/me") { authorize() }.result()
+
+    /**
+     * Changes the password and switches to the new token the server answers with; every other
+     * device is logged out. Fails with 403 if [currentPassword] is wrong.
+     */
+    suspend fun changePassword(currentPassword: String, newPassword: String): AuthResponse =
+        client.put("/me/password") {
+            authorize()
+            jsonBody(ChangePasswordRequest(currentPassword, newPassword))
+        }.result<AuthResponse>()
+            .also { token = it.token }
+
+    /** Deletes the account and everything in it. Fails with 403 if [password] is wrong. */
+    suspend fun deleteAccount(password: String) {
+        client.delete("/me") {
+            authorize()
+            jsonBody(DeleteAccountRequest(password))
+        }.result<Unit>()
+        token = null
+    }
 
     suspend fun drinks(): List<DrinkDto> = client.get("/drinks").result()
 
