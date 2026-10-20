@@ -10,6 +10,10 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.rememberScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.russhwolf.settings.Settings
@@ -17,10 +21,11 @@ import kotlinx.coroutines.flow.collectLatest
 import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
 import org.erbeenjoyers.drinkwater.ui.AuthScreen
 import org.erbeenjoyers.drinkwater.ui.MainScreen
+import org.erbeenjoyers.drinkwater.ui.ServerChoice
 
 /**
  * @param settings secure storage for the login session, see [SessionStore].
- * @param serverUrl root URL of the DrinkWater server, e.g. `http://10.0.2.2:8080`.
+ * @param server which DrinkWater server to talk to, see [ServerConfig.forBuild].
  * @param push where this device's push token comes from, or null where push isn't set up.
  * @param reminders shows the user's own drink reminders, or null where they aren't supported.
  * @param onRemindersEnabled called when the user turns reminders on, e.g. to ask for permission to notify.
@@ -28,13 +33,16 @@ import org.erbeenjoyers.drinkwater.ui.MainScreen
 @Composable
 fun App(
     settings: Settings,
-    serverUrl: String,
+    server: ServerConfig,
     push: PushRegistration? = null,
     reminders: ReminderScheduler? = null,
     onRemindersEnabled: () -> Unit = {},
 ) {
     MaterialTheme {
-        val viewModel = viewModel {
+        val serverUrls = remember(settings) { ServerUrlStore(settings) }
+        var serverUrl by remember { mutableStateOf(if (server.editable) serverUrls.load() ?: server.url else server.url) }
+        // Keyed on the server so that picking another one starts over with a fresh client.
+        val viewModel = viewModel(key = serverUrl) {
             AppViewModel(DrinkWaterApi(serverUrl), SessionStore(settings), ReminderStore(settings), push, reminders)
         }
         val scaffoldState = rememberScaffoldState()
@@ -56,6 +64,18 @@ fun App(
                     onLogin = viewModel::login,
                     onRegister = viewModel::register,
                     onInputChanged = viewModel::clearAuthError,
+                    server = if (server.editable) {
+                        ServerChoice(
+                            current = serverUrl,
+                            default = server.url,
+                            onChange = { url ->
+                                if (url == server.url) serverUrls.clear() else serverUrls.save(url)
+                                serverUrl = url
+                            },
+                        )
+                    } else {
+                        null
+                    },
                 )
             } else {
                 MainScreen(user, viewModel, scaffoldState, onRemindersEnabled)

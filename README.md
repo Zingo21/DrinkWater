@@ -59,10 +59,17 @@ Start the server with `./gradlew :server:run`, then run the app. The shared clie
 `shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/client`.
 
 * **Android emulator** – works out of the box; the app talks to `http://10.0.2.2:8080`, the emulator's alias for your machine.
-* **Android device** – build with `-Pdrinkwater.serverUrl=http://<your-computer-ip>:8080`.
+* **Android device** – add `drinkwater.serverUrl=http://<your-computer-ip>:8080` to `local.properties`, or build with `-Pdrinkwater.serverUrl=...`.
 * **iOS simulator** – uses `http://localhost:8080`.
+* **iPhone** – create `iosApp/Configuration/Local.xcconfig` with `DEV_SERVER_URL = http:/$()/<your-computer-ip>:8080`
+  (`//` starts a comment in xcconfig files). The file is not checked in.
 
-Only debug builds allow plain HTTP; a release build needs an `https://` server URL.
+Debug builds can also switch server without rebuilding: tap **Server: …** at the bottom of the login screen.
+
+Release builds always talk to `RELEASE_SERVER_URL` in
+`composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt`, on both Android and iOS,
+and can't be pointed anywhere else. It is a placeholder until the server has a real domain, and it must be
+`https://`: only debug builds allow plain HTTP.
 
 ## Push notifications
 

@@ -28,8 +28,8 @@ jobs:
       - name: App tests
         run: ./gradlew :composeApp:testDebugUnitTest
 
-      - name: Build Android app
-        run: ./gradlew :composeApp:assembleDebug
+      - name: Build Android app (debug and release)
+        run: ./gradlew :composeApp:assembleDebug :composeApp:assembleRelease
 
       - name: Upload test reports
         if: failure()

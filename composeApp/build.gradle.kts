@@ -1,6 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -39,6 +40,8 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            // Firebase pulls in Fragment 1.1, which breaks registerForActivityResult; it needs 1.3 or later.
+            implementation(libs.androidx.fragment)
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.security.crypto)
             implementation(libs.firebase.messaging)
@@ -59,9 +62,15 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.multiplatform.settings.test)
         }
     }
 }
+
+val devServerUrl: String = providers.gradleProperty("drinkwater.serverUrl").orNull
+    ?: rootProject.file("local.properties").takeIf { it.exists() }
+        ?.let { file -> Properties().apply { file.inputStream().use(::load) }.getProperty("drinkwater.serverUrl") }
+    ?: "http://10.0.2.2:8080"
 
 android {
     namespace = "org.erbeenjoyers.drinkwater"
@@ -74,10 +83,10 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // Where the app finds the server. 10.0.2.2 is the emulator's alias for the host machine;
-        // pass -Pdrinkwater.serverUrl=http://<your-ip>:8080 to run against it from a real device.
-        val serverUrl = providers.gradleProperty("drinkwater.serverUrl").getOrElse("http://10.0.2.2:8080")
-        buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
+        // The server debug builds start on; release builds always use RELEASE_SERVER_URL in
+        // ServerConfig.kt. 10.0.2.2 is the emulator's alias for the host machine. For a real device,
+        // set drinkwater.serverUrl=http://<your-ip>:8080 in local.properties or pass it with -P.
+        buildConfigField("String", "DEV_SERVER_URL", "\"$devServerUrl\"")
     }
     buildFeatures {
         buildConfig = true

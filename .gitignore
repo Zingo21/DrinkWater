@@ -18,3 +18,4 @@ captures
 **/xcshareddata/WorkspaceSettings.xcsettings
 drinkwater.db
 *service-account*.json
+iosApp/Configuration/Local.xcconfig
