@@ -82,5 +82,5 @@ screen. Plain HTTP is only allowed in debug (`src/androidDebug/AndroidManifest.x
 
 - UI text and code comments are in English. KDoc explains why, not what; match the existing density.
 - Library versions live in `gradle/libs.versions.toml`; reference them as `libs.*`.
-- `drinkwater.db`, `local.properties`, `Local.xcconfig` and `*service-account*.json` (the FCM server key) are
+- `drinkwater.db`, `local.properties`, `Local.xcconfig`, `composeApp/google-services.json` and `*service-account*.json` (the FCM server key) are
   gitignored; keep it that way.

@@ -19,3 +19,4 @@ captures
 drinkwater.db
 *service-account*.json
 iosApp/Configuration/Local.xcconfig
+composeApp/google-services.json
