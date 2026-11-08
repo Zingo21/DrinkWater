@@ -1,41 +1,106 @@
 package org.erbeenjoyers.drinkwater
 
+import auth.JwtService
+import auth.TOKEN_VERSION_CLAIM
+import auth.UserPrincipal
+import config.AppConfig
 import database.DatabaseFactory
-import io.ktor.server.application.*
-import io.ktor.server.engine.*
-import io.ktor.server.netty.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import io.ktor.http.HttpStatusCode
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.auth.Authentication
+import io.ktor.server.auth.jwt.jwt
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.BadRequestException
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.pingPeriod
 import kotlinx.serialization.json.Json
+import org.erbeenjoyers.drinkwater.api.ErrorResponse
+import push.PushSender
+import routes.authRoutes
+import routes.deviceRoutes
 import routes.drinkRoutes
-import routes.pushRoutes
-import routes.webSocketRoutes
-import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.serialization.kotlinx.json.*
+import routes.friendRoutes
+import routes.notificationRoutes
+import services.ApiException
+import services.DeviceService
+import services.DrinkService
+import services.FriendService
+import services.NotificationService
+import services.UserService
+import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.seconds
 
-fun main() {
-    embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0", module = Application::module)
-        .start(wait = true)
+fun main(args: Array<String>) {
+    if (args.isNotEmpty()) exitProcess(runCommand(args.toList()))
+
+    embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
+        module(AppConfig.fromEnvironment(developmentMode))
+    }.start(wait = true)
 }
 
+fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConfig(config)) {
+    val json = Json { ignoreUnknownKeys = true }
 
-fun Application.module() {
-    install(WebSockets)
-
-    install(ContentNegotiation){
-        json(Json { ignoreUnknownKeys = true })
+    install(WebSockets) {
+        pingPeriod = 30.seconds
     }
 
-    DatabaseFactory.init()
+    install(ContentNegotiation) {
+        json(json)
+    }
+
+    install(StatusPages) {
+        exception<ApiException> { call, cause ->
+            call.respond(cause.status, ErrorResponse(cause.message))
+        }
+        exception<BadRequestException> { call, _ ->
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("Invalid request body"))
+        }
+    }
+
+    val db = DatabaseFactory.init(config.databaseUrl)
+    val jwtService = JwtService(config.jwt)
+    val deviceService = DeviceService(db)
+    // The application is the scope, so pushes still on their way are cancelled when the server stops.
+    val notificationService = NotificationService(json, deviceService, push, pushScope = this)
+    val userService = UserService(db)
+    val friendService = FriendService(db, userService, notificationService)
+    val drinkService = DrinkService(db, userService, friendService, notificationService)
+
+    install(Authentication) {
+        jwt {
+            realm = config.jwt.realm
+            verifier(jwtService.verifier)
+            validate { credential ->
+                val userId = credential.payload.subject?.toIntOrNull()
+                val version = credential.payload.getClaim(TOKEN_VERSION_CLAIM).asInt() ?: 0
+                // Rejects tokens of deleted users and tokens from before the latest password change.
+                if (userId != null && userService.tokenVersion(userId) == version) UserPrincipal(userId) else null
+            }
+            challenge { _, _ ->
+                call.respond(HttpStatusCode.Unauthorized, ErrorResponse("Missing or invalid token"))
+            }
+        }
+    }
 
     routing {
-        get("/"){
-            call.respondText("Drink Water API is running \uD83D\uDE80")
+        get("/") {
+            call.respondText("Drink Water API is running 🚀")
         }
 
-        webSocketRoutes()
-        pushRoutes()
-        drinkRoutes()
+        authRoutes(userService, jwtService, notificationService)
+        friendRoutes(friendService)
+        drinkRoutes(drinkService, userService)
+        notificationRoutes(notificationService)
+        deviceRoutes(deviceService)
     }
 }

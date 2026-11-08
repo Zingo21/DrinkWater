@@ -1,37 +1,67 @@
 package routes
 
-import io.ktor.server.routing.*
-import io.ktor.server.application.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import database.DrinkLogs
-import database.Users
-import database.Drinks
 import io.ktor.http.HttpStatusCode
-import kotlinx.serialization.Serializable
-import org.jetbrains.exposed.sql.*
-import org.jetbrains.exposed.sql.transactions.transaction
+import io.ktor.server.auth.authenticate
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.RoutingCall
+import io.ktor.server.routing.delete
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.put
+import io.ktor.server.routing.route
+import org.erbeenjoyers.drinkwater.api.DrinkLogRequest
+import org.erbeenjoyers.drinkwater.api.GoalDto
+import services.ApiException
+import services.DrinkService
+import services.UserService
 
-fun Route.drinkRoutes() {
-    post("/drink") {
-        val request = call.receive<DrinkLogRequest>()
-        transaction {
-            DrinkLogs.insert {
-                it[userId] = request.userId
-                it[drinkId] = request.drinkId
-                it[timestamp] = System.currentTimeMillis()
-            }
-        }
-        call.respondText("Drink added!", status = HttpStatusCode.Created)
+private const val DEFAULT_HISTORY_LIMIT = 100L
+private const val MAX_HISTORY_LIMIT = 500L
+
+fun Route.drinkRoutes(drinks: DrinkService, users: UserService) {
+    get("/drinks") {
+        call.respond(drinks.drinks())
     }
 
-    get("/drinks") {
-        val drinks = transaction {
-            Drinks.selectAll().map { it[Drinks.name] }
+    authenticate {
+        post("/drink") {
+            val request = call.receive<DrinkLogRequest>()
+            call.respond(HttpStatusCode.Created, drinks.logDrink(call.userId, request))
         }
-        call.respond(drinks)
+
+        get("/friends/leaderboard") {
+            call.respond(drinks.leaderboard(call.userId, call.request.queryParameters["tz"]))
+        }
+
+        route("/me") {
+            get("/drinks") {
+                val limit = call.longQuery("limit") ?: DEFAULT_HISTORY_LIMIT
+                if (limit !in 1..MAX_HISTORY_LIMIT) {
+                    throw ApiException(HttpStatusCode.BadRequest, "limit must be between 1 and $MAX_HISTORY_LIMIT")
+                }
+                call.respond(drinks.history(call.userId, call.longQuery("from"), call.longQuery("to"), limit.toInt()))
+            }
+
+            delete("/drinks/{logId}") {
+                drinks.deleteLog(call.userId, call.intParameter("logId"))
+                call.respond(HttpStatusCode.NoContent)
+            }
+
+            get("/stats") {
+                call.respond(drinks.stats(call.userId, call.request.queryParameters["tz"]))
+            }
+
+            put("/goal") {
+                val request = call.receive<GoalDto>()
+                call.respond(users.setDailyGoal(call.userId, request.dailyGoalMl))
+            }
+        }
     }
 }
 
-@Serializable
-data class DrinkLogRequest(val userId: Int, val drinkId: Int)
+private fun RoutingCall.longQuery(name: String): Long? =
+    request.queryParameters[name]?.let {
+        it.toLongOrNull() ?: throw ApiException(HttpStatusCode.BadRequest, "Invalid $name")
+    }

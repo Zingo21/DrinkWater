@@ -1,3 +1,10 @@
 TEAM_ID=
 BUNDLE_ID=org.erbeenjoyers.drinkwater.DrinkWater
 APP_NAME=Drink Water
+
+// The server debug builds start on; release builds always use RELEASE_SERVER_URL in ServerConfig.kt.
+// "//" starts a comment in xcconfig files, hence "http:/$()/". To use another server, e.g. from a
+// real iPhone, set DEV_SERVER_URL in Local.xcconfig next to this file; it is not checked in.
+DEV_SERVER_URL = http:/$()/localhost:8080
+
+#include? "Local.xcconfig"

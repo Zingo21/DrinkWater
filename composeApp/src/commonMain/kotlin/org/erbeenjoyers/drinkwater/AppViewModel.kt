@@ -1,0 +1,507 @@
+package org.erbeenjoyers.drinkwater
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
+import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
+import kotlinx.datetime.TimeZone
+import org.erbeenjoyers.drinkwater.api.AuthResponse
+import org.erbeenjoyers.drinkwater.api.DrinkDto
+import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
+import org.erbeenjoyers.drinkwater.api.FriendRequestDto
+import org.erbeenjoyers.drinkwater.api.FriendRequestResult
+import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
+import org.erbeenjoyers.drinkwater.api.Notification
+import org.erbeenjoyers.drinkwater.api.StatsDto
+import org.erbeenjoyers.drinkwater.api.UserDto
+import org.erbeenjoyers.drinkwater.api.describe
+import org.erbeenjoyers.drinkwater.client.ApiError
+import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
+
+/** [notice] is news for the user that isn't an error, e.g. that their account was deleted. */
+data class AuthState(val busy: Boolean = false, val error: String? = null, val notice: String? = null)
+
+data class HomeState(
+    val drinks: List<DrinkDto> = emptyList(),
+    val loading: Boolean = false,
+    val loadError: String? = null,
+    /** True while a drink is being sent to the server. */
+    val logging: Boolean = false,
+)
+
+data class StatsState(
+    /** Null until the stats have been fetched once. */
+    val stats: StatsDto? = null,
+    /** The user's latest drinks, newest first. */
+    val recent: List<DrinkLogEntryDto> = emptyList(),
+    val loadError: String? = null,
+    /** True while a change (new goal, deleted drink) is being sent to the server. */
+    val working: Boolean = false,
+)
+
+data class FriendsState(
+    /** The user and their friends, whoever has drunk the most today first. */
+    val leaderboard: List<LeaderboardEntryDto> = emptyList(),
+    val incoming: List<FriendRequestDto> = emptyList(),
+    val outgoing: List<FriendRequestDto> = emptyList(),
+    /** False until the lists have been fetched once; later refreshes keep showing the old lists. */
+    val loaded: Boolean = false,
+    val loadError: String? = null,
+    /** True while a change (add, accept, decline, remove) is being sent to the server. */
+    val working: Boolean = false,
+)
+
+enum class AccountDialog { ChangePassword, DeleteAccount }
+
+data class AccountState(
+    /** The account dialog that is open, if any. */
+    val dialog: AccountDialog? = null,
+    /** True while the change is being sent to the server. */
+    val busy: Boolean = false,
+    val error: String? = null,
+)
+
+data class FeedItem(val id: Long, val notification: Notification, val receivedAt: Instant)
+
+data class FeedState(
+    /** Newest first. Only holds what arrived while the app was open. */
+    val items: List<FeedItem> = emptyList(),
+    val connected: Boolean = false,
+)
+
+class AppViewModel(
+    private val api: DrinkWaterApi,
+    private val sessions: SessionStore,
+    private val reminderStore: ReminderStore,
+    /** Null on platforms where push notifications aren't set up. */
+    private val push: PushRegistration? = null,
+    /** Null on platforms that can't remind the user to drink. */
+    private val reminders: ReminderScheduler? = null,
+) : ViewModel() {
+    /** The logged-in user, or null while logged out. */
+    var user by mutableStateOf<UserDto?>(null)
+        private set
+    var auth by mutableStateOf(AuthState())
+        private set
+    var home by mutableStateOf(HomeState())
+        private set
+    var stats by mutableStateOf(StatsState())
+        private set
+    var friends by mutableStateOf(FriendsState())
+        private set
+    var feed by mutableStateOf(FeedState())
+        private set
+    var reminderSettings by mutableStateOf(reminderStore.load())
+        private set
+    var account by mutableStateOf(AccountState())
+        private set
+
+    /** Whether this device can remind the user to drink at all. */
+    val canRemind: Boolean get() = reminders != null
+
+    private val _messages = Channel<String>(Channel.BUFFERED)
+
+    /** One-off messages to show in a snackbar. */
+    val messages: Flow<String> = _messages.receiveAsFlow()
+
+    /** Parent of every coroutine that works with the logged-in user's data, so logging out stops them all. */
+    private var sessionJob = newSessionJob()
+    private var listening: Job? = null
+    private var nextFeedId = 0L
+
+    /** The push token the server currently has for this device, if any. */
+    private var registeredPushToken: String? = null
+
+    init {
+        sessions.load()?.let { session ->
+            api.token = session.token
+            user = session.user
+            loadDrinks()
+            refreshStats()
+            refreshFriends()
+            registerForPush()
+        }
+    }
+
+    fun login(username: String, password: String) = authenticate { api.login(username.trim(), password) }
+
+    fun register(username: String, password: String) = authenticate { api.register(username.trim(), password) }
+
+    fun clearAuthError() {
+        if (auth.error != null || auth.notice != null) auth = auth.copy(error = null, notice = null)
+    }
+
+    fun logout() {
+        stopPushToThisDevice()
+        endSession()
+    }
+
+    fun openAccountDialog(dialog: AccountDialog) {
+        account = AccountState(dialog)
+    }
+
+    fun closeAccountDialog() {
+        if (!account.busy) account = AccountState()
+    }
+
+    /** Other devices are logged out; this one carries on with the new token the server sends back. */
+    fun changePassword(currentPassword: String, newPassword: String) = changeAccount {
+        sessions.save(api.changePassword(currentPassword, newPassword))
+        _messages.send("Password changed. Your other devices have been logged out.")
+    }
+
+    fun deleteAccount(password: String) = changeAccount {
+        api.deleteAccount(password)
+        // The server has already forgotten this device's push token along with the account.
+        registeredPushToken = null
+        endSession()
+        auth = AuthState(notice = "Your account has been deleted.")
+    }
+
+    private fun endSession() {
+        sessionJob.cancel()
+        sessionJob = newSessionJob()
+        listening = null
+        sessions.clear()
+        api.token = null
+        user = null
+        home = HomeState()
+        stats = StatsState()
+        friends = FriendsState()
+        feed = FeedState()
+        planReminder()
+    }
+
+    fun changeReminderSettings(settings: ReminderSettings) {
+        reminderStore.save(settings)
+        reminderSettings = settings
+        planReminder()
+    }
+
+    fun loadDrinks() {
+        if (home.loading) return
+        home = home.copy(loading = true, loadError = null)
+        launchInSession {
+            home = try {
+                val drinks = api.drinks()
+                home.copy(drinks = drinks, loading = false)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                home.copy(loading = false, loadError = e.userMessage())
+            }
+        }
+    }
+
+    fun logDrink(drink: DrinkDto, amountMl: Int) {
+        if (home.logging) return
+        home = home.copy(logging = true)
+        launchInSession {
+            try {
+                val log = api.logDrink(drink.id, amountMl, timeZone())
+                _messages.send(
+                    if (log.goalReached) "Daily goal reached!" else "Logged: $amountMl ml ${drink.name}",
+                )
+                refreshStats()
+                refreshFriends()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (!expireSessionIfUnauthorized(e)) _messages.send(e.userMessage())
+            } finally {
+                home = home.copy(logging = false)
+            }
+        }
+    }
+
+    fun refreshStats() {
+        stats = stats.copy(loadError = null)
+        launchInSession {
+            try {
+                val (current, recent) = coroutineScope {
+                    val current = async { api.stats(timeZone()) }
+                    val recent = async { api.drinkHistory(limit = RECENT_DRINKS) }
+                    current.await() to recent.await()
+                }
+                stats = stats.copy(stats = current, recent = recent)
+                planReminder()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (!expireSessionIfUnauthorized(e)) stats = stats.copy(loadError = e.userMessage())
+            }
+        }
+    }
+
+    /** [onSaved] runs once the server has stored the goal, e.g. to close the dialog. */
+    fun setDailyGoal(goalMl: Int, onSaved: () -> Unit) = changeStats {
+        api.setDailyGoal(goalMl)
+        onSaved()
+        "Daily goal set to $goalMl ml"
+    }
+
+    fun deleteDrink(entry: DrinkLogEntryDto) = changeStats {
+        api.deleteDrinkLog(entry.id)
+        "Removed ${entry.amountMl} ml ${entry.drink.name}"
+    }
+
+    fun refreshFriends() {
+        friends = friends.copy(loadError = null)
+        launchInSession {
+            try {
+                val (leaderboard, requests) = coroutineScope {
+                    val leaderboard = async { api.leaderboard(timeZone()) }
+                    val requests = async { api.friendRequests() }
+                    leaderboard.await() to requests.await()
+                }
+                friends = friends.copy(
+                    leaderboard = leaderboard,
+                    incoming = requests.incoming,
+                    outgoing = requests.outgoing,
+                    loaded = true,
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (!expireSessionIfUnauthorized(e)) friends = friends.copy(loadError = e.userMessage())
+            }
+        }
+    }
+
+    /** [onSent] runs once the server has accepted the request, e.g. to clear the input field. */
+    fun addFriend(username: String, onSent: () -> Unit) = changeFriends {
+        val response = api.sendFriendRequest(username.trim())
+        onSent()
+        when (response.result) {
+            FriendRequestResult.SENT -> "Friend request sent to ${response.request.to.username}"
+            FriendRequestResult.ACCEPTED -> "You and ${response.request.to.username} are now friends"
+        }
+    }
+
+    fun acceptRequest(request: FriendRequestDto) = changeFriends {
+        val friend = api.acceptFriendRequest(request.id)
+        "You and ${friend.username} are now friends"
+    }
+
+    /** Declines an incoming request or cancels an outgoing one. */
+    fun deleteRequest(request: FriendRequestDto) = changeFriends {
+        api.deleteFriendRequest(request.id)
+        null
+    }
+
+    fun removeFriend(friend: UserDto) = changeFriends {
+        api.removeFriend(friend.id)
+        "Removed ${friend.username}"
+    }
+
+    /** Reminds [friend] to drink. */
+    fun nudge(friend: UserDto) = changeFriends {
+        api.nudge(friend.id)
+        "Nudged ${friend.username}"
+    }
+
+    /**
+     * Keeps a connection for live notifications open until [stopListening] or logout, reconnecting
+     * when it drops. Meant to follow the app being on screen.
+     */
+    fun startListening() {
+        if (listening?.isActive == true) return
+        // The app is back on screen, possibly on a new day.
+        refreshStats()
+        listening = launchInSession {
+            var retryDelayMs = INITIAL_RETRY_DELAY_MS
+            while (true) {
+                try {
+                    api.notifications(onConnected = {
+                        retryDelayMs = INITIAL_RETRY_DELAY_MS
+                        feed = feed.copy(connected = true)
+                        // Catches up on anything that changed while disconnected, and notices an expired token.
+                        refreshFriends()
+                    }).collect(::onNotification)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                } finally {
+                    feed = feed.copy(connected = false)
+                }
+                delay(retryDelayMs)
+                retryDelayMs = (retryDelayMs * 2).coerceAtMost(MAX_RETRY_DELAY_MS)
+            }
+        }
+    }
+
+    fun stopListening() {
+        listening?.cancel()
+        listening = null
+    }
+
+    override fun onCleared() {
+        api.close()
+    }
+
+    private suspend fun onNotification(notification: Notification) {
+        val item = FeedItem(nextFeedId++, notification, Clock.System.now())
+        feed = feed.copy(items = (listOf(item) + feed.items).take(MAX_FEED_ITEMS))
+        refreshFriends()
+        _messages.send(notification.describe())
+    }
+
+    private fun authenticate(request: suspend () -> AuthResponse) {
+        if (auth.busy) return
+        auth = AuthState(busy = true)
+        viewModelScope.launch {
+            auth = try {
+                val session = request()
+                sessions.save(session)
+                user = session.user
+                loadDrinks()
+                refreshStats()
+                refreshFriends()
+                registerForPush()
+                AuthState()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                AuthState(error = e.userMessage())
+            }
+        }
+    }
+
+    /** Runs [change], shows the message it returns and then reloads the friend lists. */
+    /** Not a session coroutine, so that deleting the account can end the session it runs in. */
+    private fun changeAccount(change: suspend () -> Unit) {
+        if (account.busy) return
+        account = account.copy(busy = true, error = null)
+        viewModelScope.launch {
+            try {
+                change()
+                account = AccountState()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (expireSessionIfUnauthorized(e)) {
+                    account = AccountState()
+                } else {
+                    account = account.copy(busy = false, error = e.userMessage())
+                }
+            }
+        }
+    }
+
+    private fun changeFriends(change: suspend () -> String?) {
+        if (friends.working) return
+        friends = friends.copy(working = true)
+        launchInSession {
+            try {
+                change()?.let { _messages.send(it) }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (expireSessionIfUnauthorized(e)) return@launchInSession
+                _messages.send(e.userMessage())
+            } finally {
+                friends = friends.copy(working = false)
+            }
+            // Also after a failure: it usually means the lists on screen were out of date.
+            refreshFriends()
+        }
+    }
+
+    /** Runs [change], shows the message it returns and then reloads the stats. */
+    private fun changeStats(change: suspend () -> String) {
+        if (stats.working) return
+        stats = stats.copy(working = true)
+        launchInSession {
+            try {
+                _messages.send(change())
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (expireSessionIfUnauthorized(e)) return@launchInSession
+                _messages.send(e.userMessage())
+            } finally {
+                stats = stats.copy(working = false)
+            }
+            refreshStats()
+            refreshFriends()
+        }
+    }
+
+    /**
+     * Tells the server where to push this user's notifications. Done on every start because the
+     * token can change; failing is fine, the app then just has no push until next time.
+     */
+    private fun registerForPush() {
+        val push = push ?: return
+        launchInSession {
+            try {
+                val token = push.token() ?: return@launchInSession
+                api.registerDevice(token, push.platform)
+                registeredPushToken = token
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
+        }
+    }
+
+    /** So a logged-out device doesn't keep showing the previous user's notifications. Best effort. */
+    private fun stopPushToThisDevice() {
+        val deviceToken = registeredPushToken ?: return
+        val authToken = api.token ?: return
+        registeredPushToken = null
+        // Not a session coroutine: it has to outlive the logout that starts it.
+        viewModelScope.launch {
+            try {
+                api.unregisterDevice(deviceToken, authToken)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+            }
+        }
+    }
+
+    /** Moves the reminder to follow the latest drink, or removes it while logged out or turned off. */
+    private fun planReminder() {
+        val reminders = reminders ?: return
+        if (user == null) return reminders.schedule(null)
+        val today = stats.stats
+        reminders.schedule(
+            nextReminder(
+                reminderSettings,
+                now = Clock.System.now(),
+                lastDrinkAt = stats.recent.firstOrNull()?.let { Instant.fromEpochMilliseconds(it.timestamp) },
+                goalReached = today != null && today.todayMl >= today.goalMl,
+                zone = TimeZone.currentSystemDefault(),
+            ),
+        )
+    }
+
+    /** The device's time zone, which decides where the server draws the line between days. */
+    private fun timeZone(): String = TimeZone.currentSystemDefault().id
+
+    private fun expireSessionIfUnauthorized(e: Exception): Boolean {
+        if (e !is ApiError || e.status != HttpStatusCode.Unauthorized) return false
+        logout()
+        auth = AuthState(error = "Your session has expired. Please log in again.")
+        return true
+    }
+
+    private fun Exception.userMessage(): String =
+        if (this is ApiError) message else "Could not reach the server. Check your connection and try again."
+
+    private fun newSessionJob(): Job = SupervisorJob(viewModelScope.coroutineContext.job)
+
+    private fun launchInSession(block: suspend () -> Unit): Job = viewModelScope.launch(sessionJob) { block() }
+
+    private companion object {
+        const val INITIAL_RETRY_DELAY_MS = 1_000L
+        const val MAX_RETRY_DELAY_MS = 30_000L
+        const val MAX_FEED_ITEMS = 100
+        const val RECENT_DRINKS = 30
+    }
+}
