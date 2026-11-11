@@ -1,5 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
@@ -34,11 +35,22 @@ kotlin {
             isStatic = true
         }
     }
+
+    // The web app, for iPhones without an Apple developer account: see README.
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        outputModuleName.set("composeApp")
+        browser {
+            commonWebpackConfig {
+                outputFileName = "composeApp.js"
+            }
+        }
+        binaries.executable()
+    }
     
     sourceSets {
         
         androidMain.dependencies {
-            implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
             // Firebase pulls in Fragment 1.1, which breaks registerForActivityResult; it needs 1.3 or later.
             implementation(libs.androidx.fragment)
@@ -47,18 +59,23 @@ kotlin {
             implementation(libs.firebase.messaging)
         }
         commonMain.dependencies {
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material)
-            implementation(compose.ui)
-            implementation(compose.components.resources)
-            implementation(compose.components.uiToolingPreview)
+            implementation(libs.compose.runtime)
+            implementation(libs.compose.foundation)
+            implementation(libs.compose.material)
+            implementation(libs.compose.material.icons.core)
+            implementation(libs.compose.ui)
+            implementation(libs.compose.components.resources)
+            implementation(libs.compose.ui.tooling.preview)
             implementation(libs.androidx.lifecycle.viewmodel)
             implementation(libs.androidx.lifecycle.viewmodel.compose)
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(libs.kotlinx.datetime)
             implementation(libs.multiplatform.settings)
             implementation(projects.shared)
+        }
+        wasmJsMain.dependencies {
+            // Time zone rules for kotlinx-datetime; without them only UTC and fixed offsets work in the browser.
+            implementation(npm("@js-joda/timezone", libs.versions.jsJodaTimezone.get()))
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -108,6 +125,6 @@ android {
 }
 
 dependencies {
-    debugImplementation(compose.uiTooling)
+    debugImplementation(libs.compose.ui.tooling)
 }
 

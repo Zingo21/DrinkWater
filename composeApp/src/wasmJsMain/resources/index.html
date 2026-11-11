@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>DrinkWater</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-180.png">
+    <meta name="apple-mobile-web-app-title" content="DrinkWater">
+    <meta name="theme-color" content="#6200EE">
+    <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; }
+        #unsupported {
+            display: none; box-sizing: border-box; height: 100%; padding: 32px;
+            font: 17px -apple-system, system-ui, sans-serif; text-align: center;
+            flex-direction: column; justify-content: center;
+        }
+    </style>
+    <script>
+        // The app needs WebAssembly garbage collection: iOS/Safari 18.2, Chrome 119 or Firefox 120 and later.
+        // This validates the smallest module that declares a GC struct type.
+        var wasmGc = typeof WebAssembly === "object" && WebAssembly.validate(new Uint8Array(
+            [0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 95, 1, 127, 0]));
+        if (wasmGc) {
+            document.write('<script src="composeApp.js"><\/script>');
+        } else {
+            document.addEventListener("DOMContentLoaded", function () {
+                document.getElementById("unsupported").style.display = "flex";
+            });
+        }
+    </script>
+</head>
+<body>
+<div id="unsupported">
+    <p><strong>DrinkWater needs a newer browser.</strong></p>
+    <p>On iPhone, update to iOS 18.2 or later under Settings → General → Software Update.</p>
+</div>
+</body>
+</html>
