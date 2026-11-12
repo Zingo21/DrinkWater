@@ -3,6 +3,12 @@ package org.erbeenjoyers.drinkwater.api
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * WebSocket subprotocol of `/notifications`. Browsers can't send an Authorization header when they open
+ * a WebSocket, so clients also offer the subprotocols `drinkwater, <token>`, which browsers do allow.
+ */
+const val NOTIFICATIONS_PROTOCOL = "drinkwater"
+
 /** Messages the server pushes over the `/notifications` WebSocket, encoded as JSON. */
 @Serializable
 sealed interface Notification {

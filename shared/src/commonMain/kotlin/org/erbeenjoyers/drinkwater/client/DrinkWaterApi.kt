@@ -16,6 +16,7 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.URLProtocol
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import org.erbeenjoyers.drinkwater.api.AuthResponse
+import org.erbeenjoyers.drinkwater.api.NOTIFICATIONS_PROTOCOL
 import org.erbeenjoyers.drinkwater.api.ChangePasswordRequest
 import org.erbeenjoyers.drinkwater.api.DeleteAccountRequest
 import org.erbeenjoyers.drinkwater.api.DEFAULT_AMOUNT_ML
@@ -219,7 +221,15 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
      * connection can't be made or breaks, so collect it again to reconnect.
      */
     fun notifications(onConnected: () -> Unit = {}): Flow<Notification> = channelFlow {
-        client.webSocket(notificationsUrl, request = { authorize() }) {
+        client.webSocket(
+            notificationsUrl,
+            request = {
+                authorize()
+                // For browsers, which drop the Authorization header; see NOTIFICATIONS_PROTOCOL. One value per
+                // subprotocol: the browser engine passes each value to the WebSocket as a protocol of its own.
+                token?.let { headers.appendAll(HttpHeaders.SecWebSocketProtocol, listOf(NOTIFICATIONS_PROTOCOL, it)) }
+            },
+        ) {
             onConnected()
             for (frame in incoming) {
                 if (frame !is Frame.Text) continue

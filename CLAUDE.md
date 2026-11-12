@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 DrinkWater is a Kotlin Multiplatform app for motivating yourself and your friends to drink water: accounts,
 friends, logging drinks, stats, nudges and notifications. Three Gradle modules: `server` (Ktor, JVM),
 `shared` (KMP: API models and HTTP client, used by both server and app) and `composeApp` (Compose
-Multiplatform UI for Android and iOS). `iosApp` is the Xcode entry point. README.md has the full endpoint
+Multiplatform UI for Android, iOS and the web via Kotlin/Wasm). `iosApp` is the Xcode entry point; iPhone
+users without a paid Apple account use the web app, which the server itself serves. README.md has the full endpoint
 table, environment variables and device setup.
 
 ## Commands
@@ -17,16 +18,20 @@ table, environment variables and device setup.
 ./gradlew :server:test --tests 'ApiTest.changing the password logs out other devices'
 ./gradlew :composeApp:testDebugUnitTest       # app unit tests (commonTest, run on the JVM)
 ./gradlew :composeApp:assembleDebug :composeApp:assembleRelease
+./gradlew :composeApp:wasmJsBrowserDistribution  # web app; :server:run then serves it at /
+./gradlew :composeApp:wasmJsBrowserDevelopmentRun # web dev server on :8081, proxies the API to :8080
 ./gradlew :server:run --args="reset-password <username>"   # maintenance command, see Commands.kt
 ```
 
-CI (`.github/workflows/build.yml`) runs exactly the server tests, app tests, and debug + release APK builds.
+CI (`.github/workflows/build.yml`) runs exactly the server tests, app tests, debug + release APK builds and
+the web build.
 Build release too when touching Android dependencies: `lintVitalRelease` only runs there (it once caught an old
 Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcode; its Kotlin code in
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
 
 Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DATABASE_URL`,
-`FCM_SERVICE_ACCOUNT_FILE` (push is off without it). The app picks up `composeApp/google-services.json` only if
+`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `WEB_APP_DIR` (defaults to the web build in this checkout,
+if any). The app picks up `composeApp/google-services.json` only if
 the file exists.
 
 ## Architecture
@@ -57,6 +62,9 @@ summarized for push via `describe()`.
   `NoPush` when unconfigured) in the background scope. Nudge rate limiting is in memory in `FriendService`.
 - **Time zones:** stats, streaks and the leaderboard are computed per request in the caller's IANA zone (`tz`
   parameter / `timeZone` field, default UTC), see `services/Stats.kt`.
+- **Web app:** `routes/WebAppRoutes.kt` serves the built web app at `/` (the API routes are more specific and win).
+  Browsers can't set headers on a WebSocket, so `/notifications` also accepts the token as the subprotocols
+  `drinkwater, <token>` (`NOTIFICATIONS_PROTOCOL`, read by `authHeader` in `Application.kt`).
 - **Commands:** `main(args)` runs a maintenance command from `Commands.kt` instead of the server when given
   arguments. They work on the database directly and can run while the server is up.
 
@@ -71,6 +79,11 @@ Coroutines for the logged-in user run under `sessionJob` (`launchInSession`) so 
 Platform pieces are injected as interfaces from `MainActivity` / `MainViewController`: `PushRegistration`,
 `ReminderScheduler` (Android only so far), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
 iOS) used by `SessionStore`, `ReminderStore` and `ServerUrlStore`.
+
+**Web target.** `wasmJsMain/main.kt` uses localStorage for `Settings` and the page's own origin as the server;
+there is no push or reminders there yet. Time zones need the `@js-joda/timezone` npm package it references.
+`index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
+UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.
 
 **Server address.** Release builds always use `RELEASE_SERVER_URL` in `composeApp/.../ServerConfig.kt` (a
 placeholder `https://` URL until there is a real domain). Debug builds use a dev URL set at build time

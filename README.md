@@ -1,4 +1,4 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, Server.
+This is a Kotlin Multiplatform project targeting Android, iOS, the web and a server.
 
 * `/composeApp` is for code that will be shared across your Compose Multiplatform applications.
   It contains several subfolders:
@@ -24,6 +24,7 @@ Run the server with `./gradlew :server:run` (port 8080). Configuration via envir
 * `JWT_SECRET` – secret used to sign tokens. Required outside development mode.
 * `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
 * `FCM_SERVICE_ACCOUNT_FILE` – path to a Firebase service account key. Optional; enables push notifications.
+* `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
 
 All request and response types live in `shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/api`,
 so the app and the server use the same models. Endpoints marked 🔒 need an `Authorization: Bearer <token>` header.
@@ -86,6 +87,32 @@ Release builds always talk to `RELEASE_SERVER_URL` in
 `composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt`, on both Android and iOS,
 and can't be pointed anywhere else. It is a placeholder until the server has a real domain, and it must be
 `https://`: only debug builds allow plain HTTP.
+
+## Web app (iPhones without an Apple developer account)
+
+Without a paid Apple developer account the iOS app can't be shared with friends, so iPhones use the
+same Compose UI as a web app instead, built for the browser with Kotlin/Wasm. It needs Safari 18.2
+(iOS 18.2) or later; older browsers get a page asking them to update.
+
+```
+./gradlew :composeApp:wasmJsBrowserDistribution   # builds into composeApp/build/dist/wasmJs/productionExecutable
+./gradlew :server:run                             # serves that build at http://localhost:8080/
+```
+
+The server serves the web app itself, so the app always talks to the server it was loaded from. When
+running the server from this checkout it finds the build automatically; elsewhere, point `WEB_APP_DIR`
+at a copy of it. CI uploads the build as the `drinkwater-web` artifact.
+
+While working on the UI, `./gradlew :composeApp:wasmJsBrowserDevelopmentRun` serves a development build
+on http://localhost:8081/ and passes API calls on to the server on port 8080, so start that too.
+
+To install it on an iPhone, open the server's address in Safari, tap Share → **Add to Home Screen**. It
+then opens full screen like an app. This needs the server on `https://`.
+
+Browsers can't send an `Authorization` header when they open a WebSocket, so the web app sends its token
+for `/notifications` as the subprotocols `drinkwater, <token>` instead. The session is kept in the
+browser's localStorage. The web app has no push notifications or reminders yet: notifications only arrive
+while it is open.
 
 ## Push notifications
 

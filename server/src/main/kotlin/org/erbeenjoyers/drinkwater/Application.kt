@@ -3,6 +3,7 @@ package org.erbeenjoyers.drinkwater
 import auth.JwtService
 import auth.TOKEN_VERSION_CLAIM
 import auth.UserPrincipal
+import auth.webSocketProtocolToken
 import config.AppConfig
 import database.DatabaseFactory
 import io.ktor.http.HttpStatusCode
@@ -11,9 +12,14 @@ import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.auth.Authentication
 import io.ktor.server.auth.jwt.jwt
+import io.ktor.server.auth.parseAuthorizationHeader
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.BadRequestException
+import io.ktor.server.plugins.cachingheaders.CachingHeaders
+import io.ktor.server.plugins.compression.Compression
+import io.ktor.server.plugins.compression.gzip
+import io.ktor.server.plugins.conditionalheaders.ConditionalHeaders
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
@@ -30,6 +36,7 @@ import routes.deviceRoutes
 import routes.drinkRoutes
 import routes.friendRoutes
 import routes.notificationRoutes
+import routes.webApp
 import services.ApiException
 import services.DeviceService
 import services.DrinkService
@@ -58,6 +65,14 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
         json(json)
     }
 
+    // For the web app: its WebAssembly is several megabytes and shrinks to about a third with gzip,
+    // and unchanged files are answered with 304 Not Modified.
+    install(Compression) {
+        gzip()
+    }
+    install(ConditionalHeaders)
+    install(CachingHeaders)
+
     install(StatusPages) {
         exception<ApiException> { call, cause ->
             call.respond(cause.status, ErrorResponse(cause.message))
@@ -80,6 +95,7 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
         jwt {
             realm = config.jwt.realm
             verifier(jwtService.verifier)
+            authHeader { call -> call.request.parseAuthorizationHeader() ?: call.request.webSocketProtocolToken() }
             validate { credential ->
                 val userId = credential.payload.subject?.toIntOrNull()
                 val version = credential.payload.getClaim(TOKEN_VERSION_CLAIM).asInt() ?: 0
@@ -93,8 +109,13 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
     }
 
     routing {
-        get("/") {
-            call.respondText("Drink Water API is running 🚀")
+        val webAppDir = config.webAppDir
+        if (webAppDir != null) {
+            webApp(webAppDir)
+        } else {
+            get("/") {
+                call.respondText("Drink Water API is running 🚀")
+            }
         }
 
         authRoutes(userService, jwtService, notificationService)

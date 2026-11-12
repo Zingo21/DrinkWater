@@ -8,6 +8,7 @@ import org.erbeenjoyers.drinkwater.api.AuthResponse
 /**
  * Remembers the logged-in user and their token between app starts. [settings] must be
  * backed by secure storage (Keystore-encrypted preferences on Android, the Keychain on iOS).
+ * Browsers have no such storage, so the web app uses localStorage, see its main.kt.
  */
 class SessionStore(private val settings: Settings) {
     private val json = Json { ignoreUnknownKeys = true }

@@ -12,6 +12,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -41,6 +42,7 @@ import org.erbeenjoyers.drinkwater.api.FriendRequestResult
 import org.erbeenjoyers.drinkwater.api.FriendRequestsResponse
 import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.LoginRequest
+import org.erbeenjoyers.drinkwater.api.NOTIFICATIONS_PROTOCOL
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.RegisterRequest
 import org.erbeenjoyers.drinkwater.api.UserDto
@@ -52,6 +54,7 @@ import push.PushMessage
 import push.PushResult
 import push.PushSender
 import java.io.File
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -74,12 +77,21 @@ class ApiTest {
         }
     }
 
-    private fun apiTest(push: PushSender = NoPush, block: suspend ApplicationTestBuilder.(HttpClient) -> Unit) {
+    private fun apiTest(
+        push: PushSender = NoPush,
+        webAppDir: File? = null,
+        block: suspend ApplicationTestBuilder.(HttpClient) -> Unit,
+    ) {
         val dbFile = File.createTempFile("drinkwater-test", ".db")
         try {
             testApplication {
                 application {
-                    module(AppConfig("jdbc:sqlite:${dbFile.absolutePath}", JwtConfig(secret = "test-secret")), push)
+                    val config = AppConfig(
+                        "jdbc:sqlite:${dbFile.absolutePath}",
+                        JwtConfig(secret = "test-secret"),
+                        webAppDir = webAppDir,
+                    )
+                    module(config, push)
                 }
                 val client = createClient {
                     install(ContentNegotiation) { json() }
@@ -526,5 +538,65 @@ class ApiTest {
 
         // The username is free again.
         anna.register("anna", "password456")
+    }
+
+    @Test
+    fun `browsers can send the token as a WebSocket subprotocol`() = apiTest { client ->
+        val anna = DrinkWaterApi("http://localhost", client)
+        anna.register("anna", "password123")
+        val bertil = client.register("bertil")
+        anna.acceptFriendRequest(
+            client.post("/friends/requests") {
+                bearerAuth(bertil.token)
+                contentType(ContentType.Application.Json)
+                setBody(FriendRequestCreate("anna"))
+            }.body<FriendRequestCreateResponse>().request.id,
+        )
+
+        // What a browser sends: no Authorization header, the token as the second subprotocol.
+        client.webSocket("/notifications", request = {
+            header(HttpHeaders.SecWebSocketProtocol, "$NOTIFICATIONS_PROTOCOL, ${bertil.token}")
+        }) {
+            assertEquals(NOTIFICATIONS_PROTOCOL, call.response.headers[HttpHeaders.SecWebSocketProtocol])
+            anna.logDrink(anna.drinks().first().id)
+            val frame = withTimeout(5_000) { incoming.receive() }
+            assertIs<Frame.Text>(frame)
+            assertIs<Notification.FriendDrank>(Json.decodeFromString(Notification.serializer(), frame.readText()))
+        }
+
+        val rejected = runCatching {
+            client.webSocket("/notifications", request = {
+                header(HttpHeaders.SecWebSocketProtocol, "$NOTIFICATIONS_PROTOCOL, not-a-token")
+            }) { incoming.receive() }
+        }
+        assertTrue(rejected.isFailure)
+    }
+
+    @Test
+    fun `the web app is served next to the API`() {
+        val dir = createTempDirectory("drinkwater-web").toFile()
+        File(dir, "index.html").writeText("<!doctype html><title>DrinkWater</title>")
+        File(dir, "composeApp.js").writeText("// app")
+        File(dir, "0c7a3ff214d646587a58.wasm").writeBytes(byteArrayOf(0, 97, 115, 109))
+        try {
+            apiTest(webAppDir = dir) { client ->
+                val index = client.get("/")
+                assertEquals(HttpStatusCode.OK, index.status)
+                assertTrue(index.bodyAsText().contains("<title>DrinkWater</title>"))
+                assertEquals("no-cache", index.headers[HttpHeaders.CacheControl])
+
+                val wasm = client.get("/0c7a3ff214d646587a58.wasm")
+                assertEquals(ContentType("application", "wasm"), wasm.contentType()?.withoutParameters())
+                assertTrue(wasm.headers[HttpHeaders.CacheControl]!!.contains("max-age=31536000"))
+                assertEquals("no-cache", client.get("/composeApp.js").headers[HttpHeaders.CacheControl])
+
+                // The API is unaffected.
+                assertEquals(HttpStatusCode.NotFound, client.get("/missing.js").status)
+                assertEquals("Vatten", client.get("/drinks").body<List<DrinkDto>>().first().name)
+                assertEquals(HttpStatusCode.Unauthorized, client.get("/me").status)
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 }

@@ -31,12 +31,21 @@ jobs:
       - name: Build Android app (debug and release)
         run: ./gradlew :composeApp:assembleDebug :composeApp:assembleRelease
 
+      - name: Build web app
+        run: ./gradlew :composeApp:wasmJsBrowserDistribution
+
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: server-test-reports
           path: server/build/reports/tests/
+
+      - name: Upload web app
+        uses: actions/upload-artifact@v7
+        with:
+          name: drinkwater-web
+          path: composeApp/build/dist/wasmJs/productionExecutable/
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7
