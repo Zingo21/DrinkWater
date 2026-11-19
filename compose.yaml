@@ -1,9 +1,17 @@
 # The server behind a Cloudflare Tunnel, see "Hosting the server" in README.md. JWT_SECRET and TUNNEL_TOKEN
 # come from a .env file next to this one on the Docker host.
+# Docker keeps container logs forever by default; this caps them at 3 files of 10 MB per container.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
 services:
   server:
     build: .
     restart: unless-stopped
+    logging: *logging
     environment:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       # Cloudflare sets this to the caller's address. No port is published, so the tunnel is the only way in
@@ -23,6 +31,7 @@ services:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run
+    logging: *logging
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
     depends_on:

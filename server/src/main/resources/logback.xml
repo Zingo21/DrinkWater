@@ -4,9 +4,11 @@
             <pattern>%d{YYYY-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
-    <root level="trace">
+    <root level="INFO">
         <appender-ref ref="STDOUT"/>
     </root>
-    <logger name="org.eclipse.jetty" level="INFO"/>
+    <!-- These log every SQL statement and connection at DEBUG/TRACE; set them to DEBUG here to see the queries. -->
+    <logger name="Exposed" level="WARN"/>
+    <logger name="org.sqlite" level="WARN"/>
     <logger name="io.netty" level="INFO"/>
 </configuration>
