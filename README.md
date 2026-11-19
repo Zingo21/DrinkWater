@@ -25,6 +25,11 @@ Run the server with `./gradlew :server:run` (port 8080). Configuration via envir
 * `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
 * `FCM_SERVICE_ACCOUNT_FILE` – path to a Firebase service account key. Optional; enables push notifications.
 * `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
+* `TRUSTED_CLIENT_IP_HEADER` – header a hosting proxy puts the client's address in, e.g. `Fly-Client-IP`. Set it behind
+  such a proxy, otherwise all users share one rate limit; never set it without one, or clients can choose their own address.
+
+Login, registration, password changes and account deletion share a limit of 10 requests a minute per client
+address and answer `429 Too Many Requests` beyond that.
 
 All request and response types live in `shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/api`,
 so the app and the server use the same models. Endpoints marked 🔒 need an `Authorization: Bearer <token>` header.
@@ -113,6 +118,43 @@ Browsers can't send an `Authorization` header when they open a WebSocket, so the
 for `/notifications` as the subprotocols `drinkwater, <token>` instead. The session is kept in the
 browser's localStorage. The web app has no push notifications or reminders yet: notifications only arrive
 while it is open.
+
+## Hosting the server
+
+The repository has a `Dockerfile` and a `fly.toml` for [Fly.io](https://fly.io). The server runs as a single machine
+with the SQLite database on a volume. Fly charges for the machine and the volume; check their pricing first.
+
+1. Install `flyctl` and log in with `fly auth login`.
+2. Pick a name that is free on Fly, put it in `app` in `fly.toml`, and create the app and its volume:
+   ```
+   fly apps create <name>
+   fly volumes create drinkwater_data --region arn --size 1 --app <name>
+   ```
+3. Set a long random JWT secret. Keep it: changing it later logs everyone out.
+   ```
+   fly secrets set JWT_SECRET=<random string> --app <name>
+   ```
+4. Build the server and the web app on your machine, then deploy. Gradle runs outside Docker because configuring
+   the project needs the Android SDK.
+   ```
+   ./gradlew :server:installDist :composeApp:wasmJsBrowserDistribution
+   fly deploy --ha=false
+   ```
+   `--ha=false` keeps it to one machine; a second one would have its own database.
+5. Point the app at it: set `RELEASE_SERVER_URL` in `composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt`
+   to `https://<name>.fly.dev` and build the app again. The web app is then at the same address.
+
+Fly takes daily snapshots of the volume (`fly volumes snapshots list`); restore one with
+`fly volumes create drinkwater_data --snapshot-id <id>`. To turn on push, store the base64 of the Firebase key as a
+secret (`fly secrets set FCM_KEY_B64=<base64>`) and add to `fly.toml`:
+```
+[[files]]
+  guest_path = "/secrets/fcm.json"
+  secret_name = "FCM_KEY_B64"
+```
+together with `FCM_SERVICE_ACCOUNT_FILE = "/secrets/fcm.json"` under `[env]`.
+
+The image runs anywhere else that runs Docker, too: mount a volume at `/data` and set `JWT_SECRET`.
 
 ## Push notifications
 

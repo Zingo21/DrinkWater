@@ -11,6 +11,12 @@ data class AppConfig(
     val fcmServiceAccountFile: String? = null,
     /** The built web app (index.html and the files next to it), served at `/`. Not served when null. */
     val webAppDir: File? = null,
+    /**
+     * Header the hosting proxy puts the client's real address in, e.g. `Fly-Client-IP`. Without it every
+     * request seems to come from the proxy, and all users would share one rate limit. Only set it behind a
+     * proxy that always overwrites the header, or clients can pick their own address.
+     */
+    val trustedClientIpHeader: String? = null,
 ) {
     companion object {
         private const val DEV_JWT_SECRET = "dev-only-secret-change-me"
@@ -31,7 +37,8 @@ data class AppConfig(
         fun databaseUrlFromEnvironment(): String = System.getenv("DATABASE_URL") ?: "jdbc:sqlite:drinkwater.db"
 
         /**
-         * Reads `DATABASE_URL`, `JWT_SECRET`, `FCM_SERVICE_ACCOUNT_FILE` and `WEB_APP_DIR` from the environment. Outside development
+         * Reads `DATABASE_URL`, `JWT_SECRET`, `FCM_SERVICE_ACCOUNT_FILE`, `WEB_APP_DIR` and
+         * `TRUSTED_CLIENT_IP_HEADER` from the environment. Outside development
          * mode `JWT_SECRET` is required, so a real deployment never signs tokens with the dev secret.
          */
         fun fromEnvironment(developmentMode: Boolean): AppConfig {
@@ -47,6 +54,7 @@ data class AppConfig(
                 jwt = JwtConfig(secret = secret),
                 fcmServiceAccountFile = System.getenv("FCM_SERVICE_ACCOUNT_FILE"),
                 webAppDir = webAppDirFromEnvironment(),
+                trustedClientIpHeader = System.getenv("TRUSTED_CLIENT_IP_HEADER"),
             )
         }
     }

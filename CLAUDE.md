@@ -30,9 +30,15 @@ Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcod
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
 
 Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DATABASE_URL`,
-`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `WEB_APP_DIR` (defaults to the web build in this checkout,
+`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `TRUSTED_CLIENT_IP_HEADER` (rate limiting behind a proxy),
+`WEB_APP_DIR` (defaults to the web build in this checkout,
 if any). The app picks up `composeApp/google-services.json` only if
 the file exists.
+
+Deployment: `Dockerfile` + `fly.toml` (README, "Hosting the server"). The image only copies `server/build/install/server`
+and the web build, so run `:server:installDist :composeApp:wasmJsBrowserDistribution` first. The server and `shared`
+target Java 21 because the image runs a Java 21 JRE. It must stay one machine (SQLite file, WebSocket sessions and
+rate limits in memory).
 
 ## Architecture
 
