@@ -123,7 +123,7 @@ while it is open.
 
 Android only installs signed apps, and Play Store updates must be signed with the same key forever, so create one
 key, keep it outside the repository and back it up together with its passwords. `keytool` comes with the JDK
-(for example `C:\Program Files\Java\jdk-23in\keytool.exe` if it is not on your PATH):
+(for example `C:\Program Files\Java\jdk-23\bin\keytool.exe` if it is not on your PATH):
 
 ```
 keytool -genkeypair -v -keystore C:\path\to\drinkwater-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias drinkwater
