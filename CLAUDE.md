@@ -30,9 +30,16 @@ Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcod
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
 
 Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DATABASE_URL`,
-`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `WEB_APP_DIR` (defaults to the web build in this checkout,
+`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `TRUSTED_CLIENT_IP_HEADER` (rate limiting behind a proxy),
+`WEB_APP_DIR` (defaults to the web build in this checkout,
 if any). The app picks up `composeApp/google-services.json` only if
 the file exists.
+
+Deployment: `Dockerfile` + `compose.yaml` (server + Cloudflare Tunnel) on a Docker host, pushed with `deploy.ps1`
+(README, "Hosting the server"). The image only copies `server/build/install/server` and the web build, so those are
+built with Gradle before the image (`deploy.ps1` does it). The server and `shared`
+target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file, WebSocket sessions and
+rate limits in memory).
 
 ## Architecture
 
@@ -85,11 +92,12 @@ there is no push or reminders there yet. Time zones need the `@js-joda/timezone`
 `index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
 UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.
 
-**Server address.** Release builds always use `RELEASE_SERVER_URL` in `composeApp/.../ServerConfig.kt` (a
-placeholder `https://` URL until there is a real domain). Debug builds use a dev URL set at build time
+**Server address.** Release builds start on `RELEASE_SERVER_URL` in `composeApp/.../ServerConfig.kt` (a
+placeholder `https://` URL until there is a real domain) and can switch to other `https://` servers from the login
+screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
 (`drinkwater.serverUrl` Gradle property or `local.properties` on Android, `DEV_SERVER_URL` in
-`iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch server from the login
-screen. Plain HTTP is only allowed in debug (`src/androidDebug/AndroidManifest.xml`, `NSAllowsLocalNetworking`).
+`iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch to any server, HTTP
+included. Plain HTTP is only allowed in debug (`src/androidDebug/AndroidManifest.xml`, `NSAllowsLocalNetworking`).
 
 ## Conventions
 

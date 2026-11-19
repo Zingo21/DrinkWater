@@ -599,4 +599,17 @@ class ApiTest {
             dir.deleteRecursively()
         }
     }
+
+    @Test
+    fun `password checks are rate limited per client`() = apiTest { client ->
+        val api = DrinkWaterApi("http://localhost", client)
+        api.register("anna", "password123")
+        repeat(9) { assertFailsWith<ApiError> { api.login("anna", "wrong-password") } }
+
+        // The eleventh attempt within a minute is refused, even with the right password.
+        val limited = assertFailsWith<ApiError> { api.login("anna", "password123") }
+        assertEquals(HttpStatusCode.TooManyRequests, limited.status)
+        // Routes that don't check a password are not limited.
+        assertEquals("anna", api.me().username)
+    }
 }

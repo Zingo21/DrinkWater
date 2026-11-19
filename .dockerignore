@@ -1,0 +1,4 @@
+# The image only needs what the Dockerfile copies, see the build step there.
+*
+!server/build/install/
+!composeApp/build/dist/wasmJs/productionExecutable/

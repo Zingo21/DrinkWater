@@ -84,10 +84,17 @@ kotlin {
     }
 }
 
-val devServerUrl: String = providers.gradleProperty("drinkwater.serverUrl").orNull
-    ?: rootProject.file("local.properties").takeIf { it.exists() }
-        ?.let { file -> Properties().apply { file.inputStream().use(::load) }.getProperty("drinkwater.serverUrl") }
-    ?: "http://10.0.2.2:8080"
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+}
+
+/** A `-P` Gradle property, or else the same key in the untracked local.properties. */
+fun localSetting(name: String): String? = providers.gradleProperty(name).orNull ?: localProperties.getProperty(name)
+
+val devServerUrl: String = localSetting("drinkwater.serverUrl") ?: "http://10.0.2.2:8080"
+
+// The release signing key, see "Signing release builds" in README.md. Without it release builds come out unsigned.
+val releaseKeystore: String? = localSetting("drinkwater.signing.storeFile")
 
 android {
     namespace = "org.erbeenjoyers.drinkwater"
@@ -113,9 +120,20 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = localSetting("drinkwater.signing.storePassword")
+                keyAlias = localSetting("drinkwater.signing.keyAlias")
+                keyPassword = localSetting("drinkwater.signing.keyPassword")
+            }
+        }
+    }
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
