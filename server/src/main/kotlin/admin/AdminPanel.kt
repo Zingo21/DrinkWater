@@ -64,8 +64,8 @@ private val log = LoggerFactory.getLogger("admin")
 private val timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
 /**
- * The admin panel: a separate server on 127.0.0.1, which `tailscale serve` makes reachable inside the
- * tailnet only. It has no login of its own: Tailscale says who is asking, and only [AdminConfig.allowedLogins]
+ * The admin panel: a separate server that only the machine itself can reach, and `tailscale serve` makes
+ * reachable inside the tailnet. It has no login of its own: Tailscale says who is asking, and only [AdminConfig.allowedLogins]
  * get in.
  */
 fun Application.adminModule(
@@ -292,17 +292,14 @@ private fun kotlinx.html.HTML.page(title: String, content: BODY.() -> Unit) {
     body { content() }
 }
 
-/**
- * Runs the admin panel next to the app, on 127.0.0.1 only so that nothing outside this machine reaches it
- * except through `tailscale serve`. It starts and stops with the app.
- */
+/** Runs the admin panel next to the app, on [AdminConfig.host]. It starts and stops with the app. */
 fun Application.startAdminPanel(
     config: AdminConfig,
     admin: AdminService,
     users: UserService,
     notifications: NotificationService,
 ) {
-    val panel = embeddedServer(Netty, port = config.port, host = "127.0.0.1") {
+    val panel = embeddedServer(Netty, port = config.port, host = config.host) {
         adminModule(config, admin, users, notifications)
     }
     monitor.subscribe(ApplicationStarted) { panel.start() }

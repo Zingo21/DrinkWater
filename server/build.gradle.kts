@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.kotlinJvm)
     alias(libs.plugins.ktor)
@@ -12,6 +14,17 @@ application {
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=${extra["io.ktor.development"] ?: "false"}")
 }
 
+// The Docker image runs Java 21, so don't let a newer local JDK produce bytecode it can't load.
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
+    }
+}
+
 dependencies {
     implementation(projects.shared)
     implementation(libs.logback)
@@ -22,6 +35,7 @@ dependencies {
     implementation(libs.ktor.server.auth)
     implementation(libs.ktor.server.auth.jwt)
     implementation(libs.ktor.server.status.pages)
+    implementation(libs.ktor.server.rate.limit)
     implementation(libs.ktor.server.html.builder)
     implementation(libs.ktor.server.caching.headers)
     implementation(libs.ktor.server.compression)

@@ -22,6 +22,8 @@ import io.ktor.server.plugins.compression.Compression
 import io.ktor.server.plugins.compression.gzip
 import io.ktor.server.plugins.conditionalheaders.ConditionalHeaders
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.origin
+import io.ktor.server.plugins.ratelimit.RateLimit
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
@@ -32,6 +34,7 @@ import io.ktor.server.websocket.pingPeriod
 import kotlinx.serialization.json.Json
 import org.erbeenjoyers.drinkwater.api.ErrorResponse
 import push.PushSender
+import routes.PASSWORD_RATE_LIMIT
 import routes.authRoutes
 import routes.deviceRoutes
 import routes.drinkRoutes
@@ -46,14 +49,14 @@ import services.FriendService
 import services.NotificationService
 import services.UserService
 import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 fun main(args: Array<String>) {
     if (args.isNotEmpty()) exitProcess(runCommand(args.toList()))
 
-    val config = AppConfig.fromEnvironment(developmentMode = System.getProperty("io.ktor.development").toBoolean())
-    embeddedServer(Netty, port = SERVER_PORT, host = config.host) {
-        module(config)
+    embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
+        module(AppConfig.fromEnvironment(developmentMode))
     }.start(wait = true)
 }
 
@@ -75,6 +78,16 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
     }
     install(ConditionalHeaders)
     install(CachingHeaders)
+
+    // Slows down password guessing: every route that checks a password shares this budget per client address.
+    install(RateLimit) {
+        register(PASSWORD_RATE_LIMIT) {
+            rateLimiter(limit = 10, refillPeriod = 1.minutes)
+            requestKey { call ->
+                config.trustedClientIpHeader?.let { call.request.headers[it] } ?: call.request.origin.remoteHost
+            }
+        }
+    }
 
     install(StatusPages) {
         exception<ApiException> { call, cause ->

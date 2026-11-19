@@ -30,9 +30,17 @@ Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcod
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
 
 Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DATABASE_URL`,
-`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `WEB_APP_DIR` (defaults to the web build in this checkout,
-if any), `HOST` (default 0.0.0.0), `ADMIN_TAILSCALE_USERS` and `ADMIN_PORT` (admin panel, off unless the first is set). The app picks up `composeApp/google-services.json` only if
+`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `TRUSTED_CLIENT_IP_HEADER` (rate limiting behind a proxy),
+`WEB_APP_DIR` (defaults to the web build in this checkout,
+if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, off unless the first is set).
+The app picks up `composeApp/google-services.json` only if
 the file exists.
+
+Deployment: `Dockerfile` + `compose.yaml` (server + Cloudflare Tunnel) on a Docker host, pushed with `deploy.ps1`
+(README, "Hosting the server"). The image only copies `server/build/install/server` and the web build, so those are
+built with Gradle before the image (`deploy.ps1` does it). The server and `shared`
+target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file, WebSocket sessions and
+rate limits in memory).
 
 ## Architecture
 
@@ -65,11 +73,12 @@ summarized for push via `describe()`.
 - **Web app:** `routes/WebAppRoutes.kt` serves the built web app at `/` (the API routes are more specific and win).
   Browsers can't set headers on a WebSocket, so `/notifications` also accepts the token as the subprotocols
   `drinkwater, <token>` (`NOTIFICATIONS_PROTOCOL`, read by `authHeader` in `Application.kt`).
-- **Admin panel:** `admin/AdminPanel.kt` is a second Ktor server on 127.0.0.1:`ADMIN_PORT`, started from
-  `Application.module` only when `ADMIN_TAILSCALE_USERS` is set. It trusts `tailscale serve` for identity
+- **Admin panel:** `admin/AdminPanel.kt` is a second Ktor server on `ADMIN_HOST:ADMIN_PORT` (127.0.0.1:8090), started
+  from `Application.module` only when `ADMIN_TAILSCALE_USERS` is set. It trusts `tailscale serve` for identity
   (`Tailscale-User-Login`, which serve strips from incoming requests), refuses Funnel traffic
   (`Tailscale-Funnel-Request`) and POSTs without `Sec-Fetch-Site: same-origin`. Queries live in
-  `services/AdminService.kt`; changes reuse `UserService`. Deployment: Funnel → app port, serve → admin port (README).
+  `services/AdminService.kt`; changes reuse `UserService`. In Docker it listens on 0.0.0.0 and `compose.yaml`
+  publishes it on the VM's 127.0.0.1 only; the Cloudflare tunnel must never point at it (README, "Admin panel").
 - **Commands:** `main(args)` runs a maintenance command from `Commands.kt` instead of the server when given
   arguments. They work on the database directly and can run while the server is up.
 
@@ -90,11 +99,12 @@ there is no push or reminders there yet. Time zones need the `@js-joda/timezone`
 `index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
 UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.
 
-**Server address.** Release builds always use `RELEASE_SERVER_URL` in `composeApp/.../ServerConfig.kt` (a
-placeholder `https://` URL until there is a real domain). Debug builds use a dev URL set at build time
+**Server address.** Release builds start on `RELEASE_SERVER_URL` in `composeApp/.../ServerConfig.kt` (a
+placeholder `https://` URL until there is a real domain) and can switch to other `https://` servers from the login
+screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
 (`drinkwater.serverUrl` Gradle property or `local.properties` on Android, `DEV_SERVER_URL` in
-`iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch server from the login
-screen. Plain HTTP is only allowed in debug (`src/androidDebug/AndroidManifest.xml`, `NSAllowsLocalNetworking`).
+`iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch to any server, HTTP
+included. Plain HTTP is only allowed in debug (`src/androidDebug/AndroidManifest.xml`, `NSAllowsLocalNetworking`).
 
 ## Conventions
 

@@ -20,7 +20,12 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
     
-    jvm()
+    jvm {
+        // Runs inside the server, which targets Java 21.
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_21)
+        }
+    }
 
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {

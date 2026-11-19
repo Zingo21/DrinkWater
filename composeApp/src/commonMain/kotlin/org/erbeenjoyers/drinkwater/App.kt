@@ -40,7 +40,7 @@ fun App(
 ) {
     MaterialTheme {
         val serverUrls = remember(settings) { ServerUrlStore(settings) }
-        var serverUrl by remember { mutableStateOf(if (server.editable) serverUrls.load() ?: server.url else server.url) }
+        var serverUrl by remember { mutableStateOf(if (server.editable) serverUrls.load(server.httpsOnly) ?: server.url else server.url) }
         // Keyed on the server so that picking another one starts over with a fresh client.
         val viewModel = viewModel(key = serverUrl) {
             AppViewModel(DrinkWaterApi(serverUrl), SessionStore(settings), ReminderStore(settings), push, reminders)
@@ -68,6 +68,7 @@ fun App(
                         ServerChoice(
                             current = serverUrl,
                             default = server.url,
+                            httpsOnly = server.httpsOnly,
                             onChange = { url ->
                                 if (url == server.url) serverUrls.clear() else serverUrls.save(url)
                                 serverUrl = url

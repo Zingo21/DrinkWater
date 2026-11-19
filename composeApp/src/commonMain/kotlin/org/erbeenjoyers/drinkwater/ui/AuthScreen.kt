@@ -38,9 +38,14 @@ import org.erbeenjoyers.drinkwater.AuthState
 import org.erbeenjoyers.drinkwater.normalizeServerUrl
 
 /** Lets debug builds point the app at another server, e.g. a computer on the same wifi. */
-data class ServerChoice(val current: String, val default: String, val onChange: (String) -> Unit)
+data class ServerChoice(
+    val current: String,
+    val default: String,
+    val httpsOnly: Boolean,
+    val onChange: (String) -> Unit,
+)
 
-/** @param server shown below the form when the server can be changed, i.e. in debug builds. */
+/** @param server shown below the form when the server can be changed. */
 @Composable
 fun AuthScreen(
     state: AuthState,
@@ -172,7 +177,7 @@ fun AuthScreen(
 @Composable
 private fun ServerDialog(server: ServerChoice, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var input by rememberSaveable { mutableStateOf(server.current) }
-    val url = normalizeServerUrl(input)
+    val url = normalizeServerUrl(input, server.httpsOnly)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -180,8 +185,13 @@ private fun ServerDialog(server: ServerChoice, onDismiss: () -> Unit, onSave: (S
         text = {
             Column {
                 Text(
-                    "Only debug builds can change this. To use a server on your computer from a phone, " +
-                        "enter the computer's IP address, e.g. http://192.168.1.20:8080.",
+                    if (server.httpsOnly) {
+                        "Ask whoever runs your server for its address, e.g. https://drinkwater.example.com. " +
+                            "Your account belongs to one server, so you log in again after switching."
+                    } else {
+                        "To use a server on your computer from a phone, enter the computer's IP address, " +
+                            "e.g. http://192.168.1.20:8080."
+                    },
                     style = MaterialTheme.typography.body2,
                 )
                 Spacer(Modifier.height(12.dp))
@@ -202,7 +212,11 @@ private fun ServerDialog(server: ServerChoice, onDismiss: () -> Unit, onSave: (S
                 if (url == null) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Enter http:// or https:// followed by an address and port",
+                        if (server.httpsOnly) {
+                            "Enter https:// followed by the server's address"
+                        } else {
+                            "Enter http:// or https:// followed by an address and port"
+                        },
                         color = MaterialTheme.colors.error,
                         style = MaterialTheme.typography.caption,
                     )
