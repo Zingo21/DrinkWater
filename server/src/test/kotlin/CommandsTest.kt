@@ -1,6 +1,6 @@
+import auth.temporaryPassword
 import kotlinx.coroutines.runBlocking
 import org.erbeenjoyers.drinkwater.runCommand
-import org.erbeenjoyers.drinkwater.temporaryPassword
 import database.DatabaseFactory
 import services.UserService
 import java.io.ByteArrayOutputStream

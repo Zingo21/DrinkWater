@@ -1,5 +1,6 @@
 package org.erbeenjoyers.drinkwater
 
+import admin.startAdminPanel
 import auth.JwtService
 import auth.TOKEN_VERSION_CLAIM
 import auth.UserPrincipal
@@ -37,6 +38,7 @@ import routes.drinkRoutes
 import routes.friendRoutes
 import routes.notificationRoutes
 import routes.webApp
+import services.AdminService
 import services.ApiException
 import services.DeviceService
 import services.DrinkService
@@ -49,8 +51,9 @@ import kotlin.time.Duration.Companion.seconds
 fun main(args: Array<String>) {
     if (args.isNotEmpty()) exitProcess(runCommand(args.toList()))
 
-    embeddedServer(Netty, port = SERVER_PORT, host = "0.0.0.0") {
-        module(AppConfig.fromEnvironment(developmentMode))
+    val config = AppConfig.fromEnvironment(developmentMode = System.getProperty("io.ktor.development").toBoolean())
+    embeddedServer(Netty, port = SERVER_PORT, host = config.host) {
+        module(config)
     }.start(wait = true)
 }
 
@@ -90,6 +93,8 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
     val userService = UserService(db)
     val friendService = FriendService(db, userService, notificationService)
     val drinkService = DrinkService(db, userService, friendService, notificationService)
+
+    config.admin?.let { startAdminPanel(it, AdminService(db), userService, notificationService) }
 
     install(Authentication) {
         jwt {

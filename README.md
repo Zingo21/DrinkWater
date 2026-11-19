@@ -25,6 +25,9 @@ Run the server with `./gradlew :server:run` (port 8080). Configuration via envir
 * `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
 * `FCM_SERVICE_ACCOUNT_FILE` – path to a Firebase service account key. Optional; enables push notifications.
 * `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
+* `HOST` – address the app and API listen on, default `0.0.0.0`. Use `127.0.0.1` behind Tailscale Funnel.
+* `ADMIN_TAILSCALE_USERS` – comma-separated Tailscale logins allowed into the admin panel. The panel only runs when this is set.
+* `ADMIN_PORT` – the admin panel's port on 127.0.0.1, default `8090`.
 
 All request and response types live in `shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/api`,
 so the app and the server use the same models. Endpoints marked 🔒 need an `Authorization: Bearer <token>` header.
@@ -55,6 +58,42 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
 
 Run the server tests with `./gradlew :server:test`.
+
+## Running on a VM with Tailscale
+
+The app and the admin panel are two ports on the same server, and Tailscale exposes them separately:
+**Funnel** makes the app public on the internet with HTTPS, and **serve** makes the admin panel reachable
+inside your tailnet only. Both listen on 127.0.0.1, so nothing reaches them except through Tailscale.
+
+```
+# Build and install the server and the web app (on the VM, or copy the results over).
+./gradlew :server:installDist :composeApp:wasmJsBrowserDistribution
+
+HOST=127.0.0.1 \
+JWT_SECRET=<a long random secret> \
+WEB_APP_DIR=composeApp/build/dist/wasmJs/productionExecutable \
+ADMIN_TAILSCALE_USERS=you@example.com \
+server/build/install/server/bin/server
+
+tailscale funnel --bg 8080              # https://<machine>.<tailnet>.ts.net/ → the app, for everyone
+tailscale serve --bg --https=8443 8090  # https://<machine>.<tailnet>.ts.net:8443/ → admin, tailnet only
+```
+
+The first time, Tailscale asks you to turn on HTTPS certificates and Funnel for the tailnet and prints a link
+for each. `tailscale serve status` shows what is exposed where. Never point Funnel at the admin port: the
+panel refuses requests that came through Funnel, but that is the second line of defence, not the first.
+
+With Funnel the server has a real HTTPS address, so set `RELEASE_SERVER_URL` in
+`composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt` to
+`https://<machine>.<tailnet>.ts.net` for the Android release build.
+
+### Admin panel
+
+The panel lists everyone with when they joined, their last drink, drinks in the last week and friends,
+and can reset a password or delete an account. It has no login of its own: `tailscale serve` tells it who
+is asking (`Tailscale-User-Login`), and only the logins in `ADMIN_TAILSCALE_USERS` get in. Changes must be
+posted from the panel's own pages, so another site can't make your browser reset or delete anything.
+Every reset and deletion is logged with who did it.
 
 ### When a friend is locked out
 
