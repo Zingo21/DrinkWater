@@ -35,9 +35,10 @@ Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DA
 if any). The app picks up `composeApp/google-services.json` only if
 the file exists.
 
-Deployment: `Dockerfile` + `fly.toml` (README, "Hosting the server"). The image only copies `server/build/install/server`
-and the web build, so run `:server:installDist :composeApp:wasmJsBrowserDistribution` first. The server and `shared`
-target Java 21 because the image runs a Java 21 JRE. It must stay one machine (SQLite file, WebSocket sessions and
+Deployment: `Dockerfile` + `compose.yaml` (server + Cloudflare Tunnel) on a Docker host, pushed with `deploy.ps1`
+(README, "Hosting the server"). The image only copies `server/build/install/server` and the web build, so those are
+built with Gradle before the image (`deploy.ps1` does it). The server and `shared`
+target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file, WebSocket sessions and
 rate limits in memory).
 
 ## Architecture

@@ -25,7 +25,7 @@ Run the server with `./gradlew :server:run` (port 8080). Configuration via envir
 * `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
 * `FCM_SERVICE_ACCOUNT_FILE` – path to a Firebase service account key. Optional; enables push notifications.
 * `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
-* `TRUSTED_CLIENT_IP_HEADER` – header a hosting proxy puts the client's address in, e.g. `Fly-Client-IP`. Set it behind
+* `TRUSTED_CLIENT_IP_HEADER` – header a hosting proxy puts the client's address in, e.g. `CF-Connecting-IP` behind a Cloudflare Tunnel. Set it behind
   such a proxy, otherwise all users share one rate limit; never set it without one, or clients can choose their own address.
 
 Login, registration, password changes and account deletion share a limit of 10 requests a minute per client
@@ -143,40 +143,74 @@ keys also work as `-P` Gradle properties. Without them the release build still w
 
 ## Hosting the server
 
-The repository has a `Dockerfile` and a `fly.toml` for [Fly.io](https://fly.io). The server runs as a single machine
-with the SQLite database on a volume. Fly charges for the machine and the volume; check their pricing first.
+The server runs in Docker on any Linux machine, for example a VM on a Proxmox server at home. A
+[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) makes it reachable
+over HTTPS from anywhere without opening ports in the router, and also works without a public IP address.
+`compose.yaml` runs the server and the tunnel side by side, with the database in a Docker volume.
 
-1. Install `flyctl` and log in with `fly auth login`.
-2. Pick a name that is free on Fly, put it in `app` in `fly.toml`, and create the app and its volume:
-   ```
-   fly apps create <name>
-   fly volumes create drinkwater_data --region arn --size 1 --app <name>
-   ```
-3. Set a long random JWT secret. Keep it: changing it later logs everyone out.
-   ```
-   fly secrets set JWT_SECRET=<random string> --app <name>
-   ```
-4. Build the server and the web app on your machine, then deploy. Gradle runs outside Docker because configuring
-   the project needs the Android SDK.
-   ```
-   ./gradlew :server:installDist :composeApp:wasmJsBrowserDistribution
-   fly deploy --ha=false
-   ```
-   `--ha=false` keeps it to one machine; a second one would have its own database.
-5. Point the app at it: set `RELEASE_SERVER_URL` in `composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt`
-   to `https://<name>.fly.dev` and build the app again. The web app is then at the same address.
+### Once: the VM
 
-Fly takes daily snapshots of the volume (`fly volumes snapshots list`); restore one with
-`fly volumes create drinkwater_data --snapshot-id <id>`. To turn on push, store the base64 of the Firebase key as a
-secret (`fly secrets set FCM_KEY_B64=<base64>`) and add to `fly.toml`:
+1. Create a Debian or Ubuntu VM in Proxmox (1 CPU and 1 GB of memory are plenty) and install Docker in it:
+   ```
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo usermod -aG docker $USER
+   ```
+   Log out and in again so the group change applies.
+2. Let your Windows machine log in with a key, so deploying doesn't ask for a password (run in PowerShell; skip
+   `ssh-keygen` if you already have a key):
+   ```
+   ssh-keygen -t ed25519
+   type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh <user>@<vm-ip> "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+   ```
+
+### Once: the tunnel
+
+You need a free Cloudflare account and a domain whose DNS is managed by Cloudflare.
+
+1. In the Cloudflare dashboard go to Zero Trust → Networks → Tunnels and create a tunnel of type Cloudflared.
+   Choose Docker as the environment and copy the token from the command it shows (the long string after `--token`).
+2. Add a public hostname, for example `drinkwater.example.com`, with service type `HTTP` and URL `server:8080`.
+   WebSockets work through the tunnel without extra settings.
+3. On the VM, create `~/drinkwater/.env` with the token and a long random JWT secret. Keep the secret: changing it
+   later logs everyone out.
+   ```
+   mkdir -p ~/drinkwater
+   echo "JWT_SECRET=$(openssl rand -hex 32)" >> ~/drinkwater/.env
+   echo "TUNNEL_TOKEN=<token>" >> ~/drinkwater/.env
+   chmod 600 ~/drinkwater/.env
+   ```
+
+### Every deploy
+
+From the repository on your Windows machine:
+
 ```
-[[files]]
-  guest_path = "/secrets/fcm.json"
-  secret_name = "FCM_KEY_B64"
+.\deploy.ps1 <user>@<vm-ip>
 ```
-together with `FCM_SERVICE_ACCOUNT_FILE = "/secrets/fcm.json"` under `[env]`.
 
-The image runs anywhere else that runs Docker, too: mount a volume at `/data` and set `JWT_SECRET`.
+It builds the server and the web app, copies them to `~/drinkwater` on the VM and rebuilds and restarts the
+containers there. The database volume and `.env` are kept. Check on it with `docker compose logs -f` in `~/drinkwater`.
+
+Finally set `RELEASE_SERVER_URL` in `composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt` to
+`https://<your hostname>` and build the app again. The web app is at the same address.
+
+### Notes
+
+- The server's port isn't published on the VM, so it is only reachable through the tunnel; that is also why it can
+  trust the `CF-Connecting-IP` header for rate limiting. To try it on your home network without the tunnel, add
+  `ports: ["8080:8080"]` to the `server` service, but remove it again before going live.
+- Back up the VM with Proxmox's scheduled backups (Datacenter → Backup). The database is the Docker volume inside it.
+- To turn on push, copy the Firebase key to `~/drinkwater/fcm-service-account.json` on the VM and add to the `server`
+  service in `compose.yaml`:
+  ```
+      environment:
+        FCM_SERVICE_ACCOUNT_FILE: /secrets/fcm.json
+      volumes:
+        - ./fcm-service-account.json:/secrets/fcm.json:ro
+  ```
+- Keep it to one server container: the database, the live notification connections and the rate limits are all local
+  to it.
+- The image also runs on any other Docker host or service: mount a volume at `/data` and set `JWT_SECRET`.
 
 ## Push notifications
 

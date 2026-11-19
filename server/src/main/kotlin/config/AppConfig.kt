@@ -12,7 +12,7 @@ data class AppConfig(
     /** The built web app (index.html and the files next to it), served at `/`. Not served when null. */
     val webAppDir: File? = null,
     /**
-     * Header the hosting proxy puts the client's real address in, e.g. `Fly-Client-IP`. Without it every
+     * Header the hosting proxy puts the client's real address in, e.g. `CF-Connecting-IP`. Without it every
      * request seems to come from the proxy, and all users would share one rate limit. Only set it behind a
      * proxy that always overwrites the header, or clients can pick their own address.
      */

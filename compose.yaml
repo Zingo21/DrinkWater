@@ -1,0 +1,26 @@
+# The server behind a Cloudflare Tunnel, see "Hosting the server" in README.md. JWT_SECRET and TUNNEL_TOKEN
+# come from a .env file next to this one on the Docker host.
+services:
+  server:
+    build: .
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Cloudflare sets this to the caller's address. No port is published, so the tunnel is the only way in
+      # and nobody can send the header past it.
+      TRUSTED_CLIENT_IP_HEADER: CF-Connecting-IP
+    volumes:
+      - data:/data
+
+  tunnel:
+    # Cloudflare only supports cloudflared releases from the last year, so this follows the newest one.
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on:
+      - server
+
+volumes:
+  data:
