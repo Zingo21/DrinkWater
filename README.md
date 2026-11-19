@@ -119,6 +119,28 @@ for `/notifications` as the subprotocols `drinkwater, <token>` instead. The sess
 browser's localStorage. The web app has no push notifications or reminders yet: notifications only arrive
 while it is open.
 
+## Signing release builds
+
+Android only installs signed apps, and Play Store updates must be signed with the same key forever, so create one
+key, keep it outside the repository and back it up together with its passwords. `keytool` comes with the JDK
+(for example `C:\Program Files\Java\jdk-23in\keytool.exe` if it is not on your PATH):
+
+```
+keytool -genkeypair -v -keystore C:\path\to\drinkwater-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias drinkwater
+```
+
+Then add to `local.properties` (untracked):
+
+```
+drinkwater.signing.storeFile=C:/path/to/drinkwater-release.jks
+drinkwater.signing.storePassword=<keystore password>
+drinkwater.signing.keyAlias=drinkwater
+drinkwater.signing.keyPassword=<key password>
+```
+
+`./gradlew :composeApp:assembleRelease` then writes a signed APK to `composeApp/build/outputs/apk/release/`. The same
+keys also work as `-P` Gradle properties. Without them the release build still works but is unsigned, which is what CI builds.
+
 ## Hosting the server
 
 The repository has a `Dockerfile` and a `fly.toml` for [Fly.io](https://fly.io). The server runs as a single machine
