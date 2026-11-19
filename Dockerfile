@@ -10,7 +10,8 @@ COPY composeApp/build/dist/wasmJs/productionExecutable/ /app/web/
 # The start script defaults to Ktor's development mode, which would accept the built-in JWT secret; a later -D wins.
 ENV JAVA_OPTS="-Dio.ktor.development=false" \
     DATABASE_URL="jdbc:sqlite:/data/drinkwater.db" \
-    WEB_APP_DIR="/app/web"
+    WEB_APP_DIR="/app/web" \
+    WEB_PUSH_KEYS_FILE="/data/vapid.keys"
 
 VOLUME /data
 EXPOSE 8080

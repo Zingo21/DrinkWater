@@ -433,6 +433,9 @@ class AppViewModel(
         }
     }
 
+    /** Registers for push right away, e.g. once the user has allowed notifications in the browser. */
+    fun enablePush() = registerForPush()
+
     /**
      * Tells the server where to push this user's notifications. Done on every start because the
      * token can change; failing is fine, the app then just has no push until next time.

@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.exposed.jdbc)
     implementation(libs.sqlite.jdbc)
     implementation(libs.bcrypt)
+    implementation(libs.webpush)
     implementation(libs.google.auth)
 
     testImplementation(libs.ktor.server.test.host)

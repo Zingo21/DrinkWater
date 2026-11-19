@@ -29,6 +29,7 @@ import org.erbeenjoyers.drinkwater.ui.ServerChoice
  * @param push where this device's push token comes from, or null where push isn't set up.
  * @param reminders shows the user's own drink reminders, or null where they aren't supported.
  * @param onRemindersEnabled called when the user turns reminders on, e.g. to ask for permission to notify.
+ * @param notificationPrompt asks the user to allow notifications where the platform needs that from inside the app.
  */
 @Composable
 fun App(
@@ -37,6 +38,7 @@ fun App(
     push: PushRegistration? = null,
     reminders: ReminderScheduler? = null,
     onRemindersEnabled: () -> Unit = {},
+    notificationPrompt: NotificationPrompt? = null,
 ) {
     MaterialTheme {
         val serverUrls = remember(settings) { ServerUrlStore(settings) }
@@ -79,7 +81,7 @@ fun App(
                     },
                 )
             } else {
-                MainScreen(user, viewModel, scaffoldState, onRemindersEnabled)
+                MainScreen(user, viewModel, scaffoldState, onRemindersEnabled, notificationPrompt)
             }
         }
     }

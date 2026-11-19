@@ -140,6 +140,6 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
         friendRoutes(friendService)
         drinkRoutes(drinkService, userService)
         notificationRoutes(notificationService)
-        deviceRoutes(deviceService)
+        deviceRoutes(deviceService, push)
     }
 }

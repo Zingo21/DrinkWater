@@ -51,6 +51,8 @@ import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
 import org.erbeenjoyers.drinkwater.module
 import push.NoPush
 import push.PushMessage
+import push.Device
+import kotlin.test.assertNull
 import push.PushResult
 import push.PushSender
 import java.io.File
@@ -66,9 +68,9 @@ class ApiTest {
     private class RecordingPush(private val dead: Set<String> = emptySet()) : PushSender {
         val sent = Channel<Pair<String, PushMessage>>(Channel.UNLIMITED)
 
-        override suspend fun send(deviceToken: String, message: PushMessage): PushResult {
-            sent.send(deviceToken to message)
-            return if (deviceToken in dead) PushResult.UNREGISTERED else PushResult.SENT
+        override suspend fun send(device: Device, message: PushMessage): PushResult {
+            sent.send(device.token to message)
+            return if (device.token in dead) PushResult.UNREGISTERED else PushResult.SENT
         }
 
         /** Everything pushed until nothing more arrives for a moment. */
@@ -611,5 +613,32 @@ class ApiTest {
         assertEquals(HttpStatusCode.TooManyRequests, limited.status)
         // Routes that don't check a password are not limited.
         assertEquals("anna", api.me().username)
+    }
+
+    @Test
+    fun `browsers register web push subscriptions`() {
+        val webPush = object : PushSender {
+            override val webPushKey = "BKey"
+            override suspend fun send(device: Device, message: PushMessage) = PushResult.SENT
+        }
+        apiTest { client ->
+            val api = DrinkWaterApi("http://localhost", client)
+            assertNull(api.webPushKey(), "web push is off without a subject")
+        }
+        apiTest(push = webPush) { client ->
+            val api = DrinkWaterApi("http://localhost", client)
+            assertEquals("BKey", api.webPushKey())
+            api.register("anna", "password123")
+
+            val subscription = """{"endpoint":"https://web.push.apple.com/QGuQyavXut","expirationTime":null,""" +
+                """"keys":{"p256dh":"BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM",""" +
+                """"auth":"tBHItJI5svbpez7KI4CCXg"}}"""
+            api.registerDevice(subscription, DevicePlatform.WEB)
+            api.unregisterDevice(subscription)
+
+            val elsewhere = subscription.replace("web.push.apple.com", "example.com")
+            val rejected = assertFailsWith<ApiError> { api.registerDevice(elsewhere, DevicePlatform.WEB) }
+            assertEquals(HttpStatusCode.BadRequest, rejected.status)
+        }
     }
 }

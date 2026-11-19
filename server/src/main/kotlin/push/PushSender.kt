@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -18,6 +19,9 @@ import java.net.http.HttpResponse
 import java.time.Duration
 
 data class PushMessage(val title: String, val body: String)
+
+/** A device that gets a user's pushes; for [DevicePlatform.WEB] the token is a browser's push subscription. */
+data class Device(val token: String, val platform: DevicePlatform)
 
 enum class PushResult {
     SENT,
@@ -32,21 +36,37 @@ interface PushSender {
     /** False when push isn't configured, so callers can skip the work of looking up devices. */
     val enabled: Boolean get() = true
 
-    suspend fun send(deviceToken: String, message: PushMessage): PushResult
+    /** The VAPID public key browsers subscribe with, or null when web push is off. */
+    val webPushKey: String? get() = null
+
+    suspend fun send(device: Device, message: PushMessage): PushResult
 
     companion object {
-        /** Firebase Cloud Messaging if a service account is configured, otherwise push is off. */
+        /**
+         * Firebase Cloud Messaging for the native apps if a service account is configured, and Web Push for
+         * the web app if it has a subject. Without either, push is off.
+         */
         fun fromConfig(config: AppConfig): PushSender {
-            val file = config.fcmServiceAccountFile ?: return NoPush
-            return FcmPushSender(File(file))
+            val fcm = config.fcmServiceAccountFile?.let { FcmPushSender(File(it)) }
+            val web = config.webPush?.let { WebPushSender(it) }
+            if (fcm == null && web == null) return NoPush
+            return PlatformPushSender(native = fcm ?: NoPush, web = web ?: NoPush)
         }
     }
+}
+
+/** Sends to browsers through [web] and to the native apps through [native]. */
+class PlatformPushSender(private val native: PushSender, private val web: PushSender) : PushSender {
+    override val webPushKey: String? get() = web.webPushKey
+
+    override suspend fun send(device: Device, message: PushMessage): PushResult =
+        if (device.platform == DevicePlatform.WEB) web.send(device, message) else native.send(device, message)
 }
 
 object NoPush : PushSender {
     override val enabled = false
 
-    override suspend fun send(deviceToken: String, message: PushMessage) = PushResult.FAILED
+    override suspend fun send(device: Device, message: PushMessage) = PushResult.FAILED
 }
 
 /**
@@ -66,10 +86,10 @@ class FcmPushSender(serviceAccountFile: File) : PushSender {
         URI("https://fcm.googleapis.com/v1/projects/$projectId/messages:send")
     }
 
-    override suspend fun send(deviceToken: String, message: PushMessage): PushResult = withContext(Dispatchers.IO) {
+    override suspend fun send(device: Device, message: PushMessage): PushResult = withContext(Dispatchers.IO) {
         val body = buildJsonObject {
             putJsonObject("message") {
-                put("token", deviceToken)
+                put("token", device.token)
                 putJsonObject("notification") {
                     put("title", message.title)
                     put("body", message.body)

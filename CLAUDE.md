@@ -30,7 +30,8 @@ Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcod
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
 
 Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DATABASE_URL`,
-`FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `TRUSTED_CLIENT_IP_HEADER` (rate limiting behind a proxy),
+`FCM_SERVICE_ACCOUNT_FILE` (Android push is off without it), `WEB_PUSH_SUBJECT` and `WEB_PUSH_KEYS_FILE` (web push,
+off without the subject), `TRUSTED_CLIENT_IP_HEADER` (rate limiting behind a proxy),
 `WEB_APP_DIR` (defaults to the web build in this checkout,
 if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, off unless the first is set).
 The app picks up `composeApp/google-services.json` only if
@@ -66,8 +67,10 @@ summarized for push via `describe()`.
 - **Status codes the app depends on:** the app treats any 401 as an expired session and logs the user out, so a
   wrong password while logged in (change password, delete account) is 403, not 401.
 - **Notifications:** `NotificationService` sends to a user's open `/notifications` WebSockets (several devices
-  per user); if none got it, it pushes to their registered devices through `PushSender` (`FcmPushSender`, or
-  `NoPush` when unconfigured) in the background scope. Nudge rate limiting is in memory in `FriendService`.
+  per user); if none got it, it pushes to their registered devices through `PushSender` in the background scope:
+  `PlatformPushSender` sends `WEB` devices (token = the browser's subscription JSON) through `WebPushSender` and the
+  rest through `FcmPushSender`, each `NoPush` when unconfigured. Web subscriptions must point at a known push service
+  (`WebPushSubscription.parse`), or the server could be made to post anywhere. Nudge rate limiting is in memory in `FriendService`.
 - **Time zones:** stats, streaks and the leaderboard are computed per request in the caller's IANA zone (`tz`
   parameter / `timeZone` field, default UTC), see `services/Stats.kt`.
 - **Web app:** `routes/WebAppRoutes.kt` serves the built web app at `/` (the API routes are more specific and win).
@@ -94,8 +97,10 @@ Platform pieces are injected as interfaces from `MainActivity` / `MainViewContro
 `ReminderScheduler` (Android only so far), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
 iOS) used by `SessionStore`, `ReminderStore` and `ServerUrlStore`.
 
-**Web target.** `wasmJsMain/main.kt` uses localStorage for `Settings` and the page's own origin as the server;
-there is no push or reminders there yet. Time zones need the `@js-joda/timezone` npm package it references.
+**Web target.** `wasmJsMain/main.kt` uses localStorage for `Settings` and the page's own origin as the server.
+`WebPush.kt` is both its `PushRegistration` and its `NotificationPrompt` (the "Turn on" banner in `MainScreen`;
+browsers only ask for permission from a click), and `resources/sw.js` shows the pushes. No reminders there yet.
+Playwright's Chromium can't subscribe to a real push service (no Google API keys, and none in incognito contexts). Time zones need the `@js-joda/timezone` npm package it references.
 `index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
 UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.
 

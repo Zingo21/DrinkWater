@@ -82,8 +82,8 @@ class NotificationService(
     private suspend fun pushTo(userId: Int, notification: Notification) {
         try {
             val message = PushMessage(title = "DrinkWater", body = notification.describe())
-            devices.tokens(userId).forEach { token ->
-                if (push.send(token, message) == PushResult.UNREGISTERED) devices.forget(token)
+            devices.devices(userId).forEach { device ->
+                if (push.send(device, message) == PushResult.UNREGISTERED) devices.forget(device.token)
             }
         } catch (e: CancellationException) {
             throw e
