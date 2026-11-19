@@ -86,12 +86,13 @@ Start the server with `./gradlew :server:run`, then run the app. The shared clie
 * **iPhone** – create `iosApp/Configuration/Local.xcconfig` with `DEV_SERVER_URL = http:/$()/<your-computer-ip>:8080`
   (`//` starts a comment in xcconfig files). The file is not checked in.
 
-Debug builds can also switch server without rebuilding: tap **Server: …** at the bottom of the login screen.
+Any build can also switch server without rebuilding: tap **Server: …** at the bottom of the login screen.
 
-Release builds always talk to `RELEASE_SERVER_URL` in
-`composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt`, on both Android and iOS,
-and can't be pointed anywhere else. It is a placeholder until the server has a real domain, and it must be
-`https://`: only debug builds allow plain HTTP.
+Release builds start on `RELEASE_SERVER_URL` in
+`composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt`, on both Android and iOS, so
+friends you give the app to don't have to type anything. They can still switch to another server, but only an
+`https://` one: only debug builds allow plain HTTP. `RELEASE_SERVER_URL` is a placeholder until the server has a
+real domain.
 
 ## Web app (iPhones without an Apple developer account)
 
