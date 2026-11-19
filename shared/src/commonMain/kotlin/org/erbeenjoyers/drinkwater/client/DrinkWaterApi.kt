@@ -55,6 +55,7 @@ import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.RegisterRequest
 import org.erbeenjoyers.drinkwater.api.StatsDto
 import org.erbeenjoyers.drinkwater.api.UserDto
+import org.erbeenjoyers.drinkwater.api.WebPushKeyDto
 
 /** The server answered with an error status. [message] is the server's own description of what went wrong. */
 class ApiError(val status: HttpStatusCode, override val message: String) : Exception(message)
@@ -197,7 +198,17 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
         client.delete("/friends/requests/$requestId") { authorize() }.result<Unit>()
     }
 
-    /** Makes this device get the logged-in user's push notifications. [deviceToken] comes from Firebase Cloud Messaging. */
+    /** The key browsers subscribe to web push with, or null if the server has web push turned off. */
+    suspend fun webPushKey(): String? {
+        val response = client.get("/push/web-key")
+        if (response.status == HttpStatusCode.NotFound) return null
+        return response.result<WebPushKeyDto>().publicKey
+    }
+
+    /**
+     * Makes this device get the logged-in user's push notifications. [deviceToken] comes from Firebase Cloud
+     * Messaging, or for [DevicePlatform.WEB] is the browser's push subscription as JSON.
+     */
     suspend fun registerDevice(deviceToken: String, platform: DevicePlatform) {
         client.put("/me/devices") {
             authorize()

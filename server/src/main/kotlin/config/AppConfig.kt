@@ -20,6 +20,8 @@ data class AppConfig(
     val trustedClientIpHeader: String? = null,
     /** The admin panel, or null to not run one. */
     val admin: AdminConfig? = null,
+    /** Push to the web app, or null to leave it off. */
+    val webPush: WebPushConfig? = null,
 ) {
     companion object {
         private const val DEV_JWT_SECRET = "dev-only-secret-change-me"
@@ -51,7 +53,8 @@ data class AppConfig(
 
         /**
          * Reads `DATABASE_URL`, `JWT_SECRET`, `FCM_SERVICE_ACCOUNT_FILE`, `WEB_APP_DIR`, `TRUSTED_CLIENT_IP_HEADER`,
-         * `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` from the environment. Outside development
+         * `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT`, `ADMIN_HOST`, `WEB_PUSH_SUBJECT` and `WEB_PUSH_KEYS_FILE` from the
+         * environment. Outside development
          * mode `JWT_SECRET` is required, so a real deployment never signs tokens with the dev secret.
          */
         fun fromEnvironment(developmentMode: Boolean): AppConfig {
@@ -69,6 +72,9 @@ data class AppConfig(
                 webAppDir = webAppDirFromEnvironment(),
                 trustedClientIpHeader = System.getenv("TRUSTED_CLIENT_IP_HEADER"),
                 admin = adminFromEnvironment(),
+                webPush = System.getenv("WEB_PUSH_SUBJECT")?.takeIf { it.isNotBlank() }?.let { subject ->
+                    WebPushConfig(subject, keysFile = System.getenv("WEB_PUSH_KEYS_FILE") ?: "vapid.keys")
+                },
             )
         }
     }
@@ -83,6 +89,19 @@ data class AdminConfig(val port: Int, val allowedLogins: Set<String>, val host: 
     companion object {
         const val DEFAULT_PORT = 8090
         const val DEFAULT_HOST = "127.0.0.1"
+    }
+}
+
+/**
+ * Web Push. [subject] is how push services can reach whoever runs the server, a `mailto:` address or an
+ * `https://` URL; Apple's push service rejects pushes without a valid one. [keysFile] holds the server's VAPID
+ * keys and is created on first start.
+ */
+data class WebPushConfig(val subject: String, val keysFile: String) {
+    init {
+        require(subject.startsWith("mailto:") || subject.startsWith("https://")) {
+            "WEB_PUSH_SUBJECT must start with mailto: or https://"
+        }
     }
 }
 

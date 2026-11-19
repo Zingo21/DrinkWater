@@ -1,6 +1,10 @@
 package org.erbeenjoyers.drinkwater.ui
 
 import androidx.compose.foundation.layout.Box
+import org.erbeenjoyers.drinkwater.NotificationPrompt
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.Badge
@@ -49,9 +53,19 @@ private enum class Tab(val label: String, val icon: ImageVector) {
  * @param onRemindersEnabled called when the user turns their drink reminders on.
  */
 @Composable
-fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldState, onRemindersEnabled: () -> Unit) {
+fun MainScreen(
+    user: UserDto,
+    viewModel: AppViewModel,
+    scaffoldState: ScaffoldState,
+    onRemindersEnabled: () -> Unit,
+    notificationPrompt: NotificationPrompt? = null,
+) {
     var tab by rememberSaveable { mutableStateOf(Tab.Drink) }
     var editingReminders by remember { mutableStateOf(false) }
+    var promptState by remember { mutableStateOf(NotificationPrompt.State.HIDDEN) }
+    LaunchedEffect(notificationPrompt) {
+        promptState = notificationPrompt?.state() ?: NotificationPrompt.State.HIDDEN
+    }
 
     // Live notifications only while the app is on screen.
     LifecycleStartEffect(viewModel) {
@@ -111,34 +125,47 @@ fun MainScreen(user: UserDto, viewModel: AppViewModel, scaffoldState: ScaffoldSt
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (tab) {
-                Tab.Drink -> DrinkScreen(
-                    state = viewModel.home,
-                    stats = viewModel.stats.stats,
-                    onLogDrink = viewModel::logDrink,
-                    onRetry = viewModel::loadDrinks,
-                )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            NotificationBanner(
+                state = promptState,
+                onTurnOn = {
+                    promptState = NotificationPrompt.State.HIDDEN
+                    notificationPrompt?.ask { granted -> if (granted) viewModel.enablePush() }
+                },
+                onDismiss = {
+                    promptState = NotificationPrompt.State.HIDDEN
+                    notificationPrompt?.dismiss()
+                },
+            )
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                when (tab) {
+                    Tab.Drink -> DrinkScreen(
+                        state = viewModel.home,
+                        stats = viewModel.stats.stats,
+                        onLogDrink = viewModel::logDrink,
+                        onRetry = viewModel::loadDrinks,
+                    )
 
-                Tab.Stats -> StatsScreen(
-                    state = viewModel.stats,
-                    onSetGoal = viewModel::setDailyGoal,
-                    onDeleteDrink = viewModel::deleteDrink,
-                    onRetry = viewModel::refreshStats,
-                )
+                    Tab.Stats -> StatsScreen(
+                        state = viewModel.stats,
+                        onSetGoal = viewModel::setDailyGoal,
+                        onDeleteDrink = viewModel::deleteDrink,
+                        onRetry = viewModel::refreshStats,
+                    )
 
-                Tab.Friends -> FriendsScreen(
-                    state = viewModel.friends,
-                    userId = user.id,
-                    onAddFriend = viewModel::addFriend,
-                    onAccept = viewModel::acceptRequest,
-                    onDeleteRequest = viewModel::deleteRequest,
-                    onRemoveFriend = viewModel::removeFriend,
-                    onNudge = viewModel::nudge,
-                    onRetry = viewModel::refreshFriends,
-                )
+                    Tab.Friends -> FriendsScreen(
+                        state = viewModel.friends,
+                        userId = user.id,
+                        onAddFriend = viewModel::addFriend,
+                        onAccept = viewModel::acceptRequest,
+                        onDeleteRequest = viewModel::deleteRequest,
+                        onRemoveFriend = viewModel::removeFriend,
+                        onNudge = viewModel::nudge,
+                        onRetry = viewModel::refreshFriends,
+                    )
 
-                Tab.Feed -> FeedScreen(viewModel.feed)
+                    Tab.Feed -> FeedScreen(viewModel.feed)
+                }
             }
         }
     }

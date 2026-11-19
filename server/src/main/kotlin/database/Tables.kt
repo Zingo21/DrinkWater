@@ -58,7 +58,8 @@ object Friendships : Table() {
 object DeviceTokens : Table() {
     val id = integer("id").autoIncrement()
     val userId = integer("user_id").references(Users.id).index()
-    val token = varchar("token", 512).uniqueIndex()
+    /** Web push subscriptions are longer than FCM tokens; SQLite doesn't enforce the length, so old databases are fine. */
+    val token = varchar("token", 2048).uniqueIndex()
     val platform = enumerationByName<DevicePlatform>("platform", 10)
     val updatedAt = long("updated_at")
     override val primaryKey = PrimaryKey(id)

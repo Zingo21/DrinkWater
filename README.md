@@ -24,6 +24,8 @@ Run the server with `./gradlew :server:run` (port 8080). Configuration via envir
 * `JWT_SECRET` – secret used to sign tokens. Required outside development mode.
 * `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
 * `FCM_SERVICE_ACCOUNT_FILE` – path to a Firebase service account key. Optional; enables push notifications.
+* `WEB_PUSH_SUBJECT` – a `mailto:` address or `https://` URL where push services can reach you. Optional; enables push
+  notifications to the web app. `WEB_PUSH_KEYS_FILE` is where the server keeps its web push keys, default `vapid.keys`.
 * `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
 * `TRUSTED_CLIENT_IP_HEADER` – header a hosting proxy puts the client's address in, e.g. `CF-Connecting-IP` behind a Cloudflare Tunnel. Set it behind
   such a proxy, otherwise all users share one rate limit; never set it without one, or clients can choose their own address.
@@ -57,7 +59,8 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | DELETE 🔒 | `/me/drinks/{id}` | Remove one of your logs |
 | GET 🔒 | `/me/stats` | Today's total, daily goal, streak and the last seven days. `tz` is an IANA time zone such as `Europe/Stockholm` (default UTC) |
 | PUT 🔒 | `/me/goal` | Set your daily goal in ml |
-| PUT 🔒 | `/me/devices` | Register this device's FCM token for push notifications |
+| PUT 🔒 | `/me/devices` | Register this device for push: its FCM token, or a browser's push subscription (`WEB`) |
+| GET | `/push/web-key` | The key browsers subscribe to web push with; 404 when web push is off |
 | DELETE 🔒 | `/me/devices/{token}` | Stop pushing to a device, e.g. on log-out |
 | WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
 
@@ -119,8 +122,8 @@ then opens full screen like an app. This needs the server on `https://`.
 
 Browsers can't send an `Authorization` header when they open a WebSocket, so the web app sends its token
 for `/notifications` as the subprotocols `drinkwater, <token>` instead. The session is kept in the
-browser's localStorage. The web app has no push notifications or reminders yet: notifications only arrive
-while it is open.
+browser's localStorage. Push notifications work once the server has web push turned on, see
+[Push notifications](#push-notifications); the web app has no reminders yet.
 
 ## Signing release builds
 
@@ -249,8 +252,26 @@ so anyone could claim to be you.
 
 ## Push notifications
 
-A user with the app open gets notifications over the WebSocket. Otherwise the server pushes them
-through Firebase Cloud Messaging (FCM). Push is off until you connect a Firebase project:
+A user with the app open gets notifications over the WebSocket. Otherwise the server pushes them to their
+devices: the Android app through Firebase Cloud Messaging (FCM), the web app with Web Push. Each is off until
+it is set up.
+
+### Web app
+
+1. Give the server a contact address for the push services. Apple's rejects pushes without one. On the VM:
+   ```
+   echo "WEB_PUSH_SUBJECT=mailto:you@example.com" >> ~/drinkwater/.env
+   ```
+   and deploy. The server makes its web push keys on first start and keeps them in the data volume
+   (`/data/vapid.keys`). Keep that file: browsers subscribed with one key can't be reached with another.
+2. In the web app a banner offers to turn notifications on; tapping **Turn on** asks the browser.
+   On an iPhone this only works in the app added to the Home Screen (iOS 16.4 and later), not in a Safari
+   tab, and the banner says so there. The Home Screen app has its own storage, so log in again in it.
+
+The server only sends to the browsers' own push services (Google, Mozilla, Apple and Microsoft) and refuses
+subscriptions that point anywhere else.
+
+### Android app
 
 1. Create a project in the [Firebase console](https://console.firebase.google.com) and add an Android app
    with the package name `org.erbeenjoyers.drinkwater`.
@@ -258,8 +279,8 @@ through Firebase Cloud Messaging (FCM). Push is off until you connect a Firebase
 3. Under Project settings → Service accounts, generate a private key. Keep the file out of the repository
    and start the server with `FCM_SERVICE_ACCOUNT_FILE` pointing at it.
 
-Without these the app and the server work as before, just without push. The iOS app does not register
-for push yet.
+Without these the app and the server work as before, just without push. The native iOS app does not
+register for push; iPhones get it through the web app.
 
 ## Reminders
 

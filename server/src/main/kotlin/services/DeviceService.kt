@@ -3,6 +3,7 @@ package services
 import database.Db
 import database.DeviceTokens
 import io.ktor.http.HttpStatusCode
+import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.and
@@ -10,6 +11,8 @@ import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
+import push.Device
+import push.WebPushSubscription
 
 /** Keeps track of which devices should get a user's push notifications. */
 class DeviceService(private val db: Db) {
@@ -21,6 +24,9 @@ class DeviceService(private val db: Db) {
         val token = registration.token
         if (token.isBlank() || token.length > MAX_TOKEN_LENGTH) {
             throw ApiException(HttpStatusCode.BadRequest, "Invalid device token")
+        }
+        if (registration.platform == DevicePlatform.WEB && WebPushSubscription.parse(token) == null) {
+            throw ApiException(HttpStatusCode.BadRequest, "Invalid web push subscription")
         }
         db.query {
             val updated = DeviceTokens.update({ DeviceTokens.token eq token }) {
@@ -53,11 +59,12 @@ class DeviceService(private val db: Db) {
         }
     }
 
-    suspend fun tokens(userId: Int): List<String> = db.query {
-        DeviceTokens.selectAll().where { DeviceTokens.userId eq userId }.map { it[DeviceTokens.token] }
+    suspend fun devices(userId: Int): List<Device> = db.query {
+        DeviceTokens.selectAll().where { DeviceTokens.userId eq userId }
+            .map { Device(it[DeviceTokens.token], it[DeviceTokens.platform]) }
     }
 
     private companion object {
-        const val MAX_TOKEN_LENGTH = 512
+        const val MAX_TOKEN_LENGTH = 2048
     }
 }

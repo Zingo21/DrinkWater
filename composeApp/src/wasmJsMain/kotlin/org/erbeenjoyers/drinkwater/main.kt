@@ -5,6 +5,7 @@ import androidx.compose.ui.window.ComposeViewport
 import com.russhwolf.settings.StorageSettings
 import kotlinx.browser.document
 import kotlinx.browser.window
+import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
 
 @OptIn(ExperimentalWasmJsInterop::class)
 @JsModule("@js-joda/timezone")
@@ -23,7 +24,11 @@ private val jsJodaTz = JsJodaTimeZoneModule
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     val server = ServerConfig(url = window.location.origin, editable = false)
+    val settings = StorageSettings()
+    // Its own client: the push key is fetched before anyone logs in, and needs no token.
+    val keyClient = DrinkWaterApi(server.url)
+    val push = WebPush(settings) { keyClient.webPushKey() }
     ComposeViewport(document.body!!) {
-        App(StorageSettings(), server)
+        App(settings, server, push = push, notificationPrompt = push)
     }
 }
