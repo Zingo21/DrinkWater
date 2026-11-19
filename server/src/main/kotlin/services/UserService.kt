@@ -105,6 +105,11 @@ class UserService(private val db: Db) {
     /** Deletes the user and everything that belongs to them, after checking their password. */
     suspend fun deleteAccount(userId: Int, password: String) {
         checkPassword(userId, password)
+        deleteUser(userId)
+    }
+
+    /** Deletes the user and everything that belongs to them, without asking for their password: for the admin panel. */
+    suspend fun deleteUser(userId: Int) {
         db.query {
             DeviceTokens.deleteWhere { DeviceTokens.userId eq userId }
             DrinkLogs.deleteWhere { DrinkLogs.userId eq userId }

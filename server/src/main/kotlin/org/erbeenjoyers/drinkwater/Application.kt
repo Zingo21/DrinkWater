@@ -1,5 +1,6 @@
 package org.erbeenjoyers.drinkwater
 
+import admin.startAdminPanel
 import auth.JwtService
 import auth.TOKEN_VERSION_CLAIM
 import auth.UserPrincipal
@@ -40,6 +41,7 @@ import routes.drinkRoutes
 import routes.friendRoutes
 import routes.notificationRoutes
 import routes.webApp
+import services.AdminService
 import services.ApiException
 import services.DeviceService
 import services.DrinkService
@@ -104,6 +106,8 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
     val userService = UserService(db)
     val friendService = FriendService(db, userService, notificationService)
     val drinkService = DrinkService(db, userService, friendService, notificationService)
+
+    config.admin?.let { startAdminPanel(it, AdminService(db), userService, notificationService) }
 
     install(Authentication) {
         jwt {

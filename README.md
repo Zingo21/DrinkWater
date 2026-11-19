@@ -27,6 +27,8 @@ Run the server with `./gradlew :server:run` (port 8080). Configuration via envir
 * `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
 * `TRUSTED_CLIENT_IP_HEADER` – header a hosting proxy puts the client's address in, e.g. `CF-Connecting-IP` behind a Cloudflare Tunnel. Set it behind
   such a proxy, otherwise all users share one rate limit; never set it without one, or clients can choose their own address.
+* `ADMIN_TAILSCALE_USERS` – comma-separated Tailscale logins allowed into the [admin panel](#admin-panel). The panel only runs when this is set.
+* `ADMIN_PORT` and `ADMIN_HOST` – where the admin panel listens, default `127.0.0.1:8090`.
 
 Login, registration, password changes and account deletion share a limit of 10 requests a minute per client
 address and answer `429 Too Many Requests` beyond that.
@@ -194,6 +196,38 @@ containers there. The database volume and `.env` are kept. Check on it with `doc
 
 Finally set `RELEASE_SERVER_URL` in `composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt` to
 `https://<your hostname>` and build the app again. The web app is at the same address.
+
+### Admin panel
+
+The admin panel lists everyone with when they joined, their last drink, drinks in the last week and friends, and
+can reset a password or delete an account. Only you can reach it: it is a separate port that is published on the
+VM's own 127.0.0.1, and [Tailscale](https://tailscale.com) makes that port reachable from your own devices and
+nobody else's. The app itself stays behind the Cloudflare Tunnel as before.
+
+1. Install Tailscale on the VM and log in with your Tailscale account:
+   ```
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up
+   ```
+2. Add the Tailscale logins that may use the panel to `~/drinkwater/.env` (comma-separated; `tailscale status`
+   shows yours). Without this line the panel doesn't run.
+   ```
+   echo "ADMIN_TAILSCALE_USERS=you@example.com" >> ~/drinkwater/.env
+   ```
+3. Deploy as usual, then make the panel reachable in your tailnet:
+   ```
+   sudo tailscale serve --bg --https=8443 8090
+   ```
+   The first time it asks you to turn on HTTPS certificates for the tailnet and prints a link for it.
+4. Open `https://<vm-name>.<tailnet>.ts.net:8443/` on a phone or computer that is signed in to Tailscale.
+
+The panel has no login of its own. `tailscale serve` tells it who is asking, in a `Tailscale-User-Login` header it
+removes from incoming requests first, and only the logins in `ADMIN_TAILSCALE_USERS` get in. It refuses anything
+that came through Tailscale Funnel, and changes must be posted from its own pages, so another site can't make your
+browser reset or delete anything. Every reset and deletion is logged with who did it (`docker compose logs server`).
+
+Never add port 8090 as a public hostname in the Cloudflare tunnel: Cloudflare doesn't remove Tailscale's headers,
+so anyone could claim to be you.
 
 ### Notes
 

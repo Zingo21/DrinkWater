@@ -2,13 +2,13 @@ package org.erbeenjoyers.drinkwater
 
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.Logger
+import auth.temporaryPassword
 import config.AppConfig
 import database.DatabaseFactory
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import services.UserService
 import java.io.PrintStream
-import java.security.SecureRandom
 
 private const val USAGE = """Usage: server <command>
 
@@ -55,10 +55,4 @@ private fun resetPassword(username: String, databaseUrl: String, out: PrintStrea
     out.println("New password for ${username.trim().lowercase()}: $password")
     out.println("They are logged out on all devices. Ask them to log in and change it under the account menu.")
     return 0
-}
-
-/** Easy to read out or type: no 0/o, 1/l/i, grouped like `abcd-efgh-jkmn`. */
-internal fun temporaryPassword(random: SecureRandom = SecureRandom()): String {
-    val alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
-    return (1..3).joinToString("-") { (1..4).map { alphabet[random.nextInt(alphabet.length)] }.joinToString("") }
 }

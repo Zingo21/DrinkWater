@@ -36,6 +36,7 @@ dependencies {
     implementation(libs.ktor.server.auth.jwt)
     implementation(libs.ktor.server.status.pages)
     implementation(libs.ktor.server.rate.limit)
+    implementation(libs.ktor.server.html.builder)
     implementation(libs.ktor.server.caching.headers)
     implementation(libs.ktor.server.compression)
     implementation(libs.ktor.server.conditional.headers)

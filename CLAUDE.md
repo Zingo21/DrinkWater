@@ -32,7 +32,8 @@ Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcod
 Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DATABASE_URL`,
 `FCM_SERVICE_ACCOUNT_FILE` (push is off without it), `TRUSTED_CLIENT_IP_HEADER` (rate limiting behind a proxy),
 `WEB_APP_DIR` (defaults to the web build in this checkout,
-if any). The app picks up `composeApp/google-services.json` only if
+if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, off unless the first is set).
+The app picks up `composeApp/google-services.json` only if
 the file exists.
 
 Deployment: `Dockerfile` + `compose.yaml` (server + Cloudflare Tunnel) on a Docker host, pushed with `deploy.ps1`
@@ -72,6 +73,12 @@ summarized for push via `describe()`.
 - **Web app:** `routes/WebAppRoutes.kt` serves the built web app at `/` (the API routes are more specific and win).
   Browsers can't set headers on a WebSocket, so `/notifications` also accepts the token as the subprotocols
   `drinkwater, <token>` (`NOTIFICATIONS_PROTOCOL`, read by `authHeader` in `Application.kt`).
+- **Admin panel:** `admin/AdminPanel.kt` is a second Ktor server on `ADMIN_HOST:ADMIN_PORT` (127.0.0.1:8090), started
+  from `Application.module` only when `ADMIN_TAILSCALE_USERS` is set. It trusts `tailscale serve` for identity
+  (`Tailscale-User-Login`, which serve strips from incoming requests), refuses Funnel traffic
+  (`Tailscale-Funnel-Request`) and POSTs without `Sec-Fetch-Site: same-origin`. Queries live in
+  `services/AdminService.kt`; changes reuse `UserService`. In Docker it listens on 0.0.0.0 and `compose.yaml`
+  publishes it on the VM's 127.0.0.1 only; the Cloudflare tunnel must never point at it (README, "Admin panel").
 - **Commands:** `main(args)` runs a maintenance command from `Commands.kt` instead of the server when given
   arguments. They work on the database directly and can run while the server is up.
 

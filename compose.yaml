@@ -9,6 +9,12 @@ services:
       # Cloudflare sets this to the caller's address. No port is published, so the tunnel is the only way in
       # and nobody can send the header past it.
       TRUSTED_CLIENT_IP_HEADER: CF-Connecting-IP
+      # The admin panel, see "Admin panel" in README.md. It only runs when .env names who may use it.
+      ADMIN_TAILSCALE_USERS: ${ADMIN_TAILSCALE_USERS:-}
+      ADMIN_HOST: 0.0.0.0
+    ports:
+      # Published on the VM's own 127.0.0.1 only, for `tailscale serve`. Never route the tunnel here.
+      - "127.0.0.1:8090:8090"
     volumes:
       - data:/data
 
