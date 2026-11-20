@@ -149,6 +149,14 @@ class ApiTest {
     }
 
     @Test
+    fun `the health check answers without a token`() = apiTest { client ->
+        val health = client.get("/health")
+        assertEquals(HttpStatusCode.OK, health.status)
+        assertEquals("OK", health.bodyAsText())
+        assertEquals("no-store", health.headers[HttpHeaders.CacheControl])
+    }
+
+    @Test
     fun `rejects invalid registration and missing token`() = apiTest { client ->
         val shortPassword = client.post("/auth/register") {
             contentType(ContentType.Application.Json)
@@ -593,6 +601,7 @@ class ApiTest {
                 assertEquals("no-cache", client.get("/composeApp.js").headers[HttpHeaders.CacheControl])
 
                 // The API is unaffected.
+                assertEquals("OK", client.get("/health").bodyAsText())
                 assertEquals(HttpStatusCode.NotFound, client.get("/missing.js").status)
                 assertEquals("Vatten", client.get("/drinks").body<List<DrinkDto>>().first().name)
                 assertEquals(HttpStatusCode.Unauthorized, client.get("/me").status)

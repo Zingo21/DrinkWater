@@ -8,12 +8,17 @@ COPY server/build/install/server/ /app/
 COPY composeApp/build/dist/wasmJs/productionExecutable/ /app/web/
 
 # The start script defaults to Ktor's development mode, which would accept the built-in JWT secret; a later -D wins.
-ENV JAVA_OPTS="-Dio.ktor.development=false" \
+# Out of memory, the JVM exits instead of limping on, and the restart policy in compose.yaml starts it again.
+ENV JAVA_OPTS="-Dio.ktor.development=false -XX:+ExitOnOutOfMemoryError" \
     DATABASE_URL="jdbc:sqlite:/data/drinkwater.db" \
     WEB_APP_DIR="/app/web" \
     WEB_PUSH_KEYS_FILE="/data/vapid.keys"
 
 VOLUME /data
 EXPOSE 8080
+# Shows as healthy or unhealthy in `docker ps`, and `docker compose up --wait` waits for it. Docker itself doesn't
+# restart an unhealthy container; an uptime monitor on /health is what tells you (README, "Hosting the server").
+HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=3 \
+    CMD curl -fsS -o /dev/null http://localhost:8080/health || exit 1
 # Through sh, because files copied from Windows can lose their executable bit.
 CMD ["sh", "/app/bin/server"]

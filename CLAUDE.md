@@ -41,7 +41,8 @@ Deployment: `Dockerfile` + `compose.yaml` (server + Cloudflare Tunnel) on a Dock
 (README, "Hosting the server"). The image only copies `server/build/install/server` and the web build, so those are
 built with Gradle before the image (`deploy.ps1` does it). The server and `shared`
 target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file, WebSocket sessions and
-rate limits in memory).
+rate limits in memory). The image's `HEALTHCHECK` curls `/health` (`routes/HealthRoutes.kt`, which also
+queries the database), and `deploy.ps1` waits for it with `docker compose up --wait`.
 
 ## Architecture
 

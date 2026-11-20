@@ -23,7 +23,7 @@ Invoke-Step { scp $archive "${Target}:drinkwater-deploy.tar" }
 Remove-Item $archive
 
 # The old build is removed first because the web app's file names change with every build. .env and the
-# database volume are left alone.
+# database volume are left alone. --wait fails the deploy if the new server doesn't pass its health check.
 Invoke-Step {
-    ssh $Target 'mkdir -p ~/drinkwater && cd ~/drinkwater && rm -rf server composeApp && tar -xf ~/drinkwater-deploy.tar && rm ~/drinkwater-deploy.tar && docker compose up -d --build'
+    ssh $Target 'mkdir -p ~/drinkwater && cd ~/drinkwater && rm -rf server composeApp && tar -xf ~/drinkwater-deploy.tar && rm ~/drinkwater-deploy.tar && docker compose up -d --build --wait --wait-timeout 120'
 }

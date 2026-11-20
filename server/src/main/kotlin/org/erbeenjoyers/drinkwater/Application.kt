@@ -39,6 +39,7 @@ import routes.authRoutes
 import routes.deviceRoutes
 import routes.drinkRoutes
 import routes.friendRoutes
+import routes.healthRoutes
 import routes.notificationRoutes
 import routes.webApp
 import services.AdminService
@@ -141,5 +142,6 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
         drinkRoutes(drinkService, userService)
         notificationRoutes(notificationService)
         deviceRoutes(deviceService, push)
+        healthRoutes(db)
     }
 }

@@ -63,6 +63,7 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | GET | `/push/web-key` | The key browsers subscribe to web push with; 404 when web push is off |
 | DELETE 🔒 | `/me/devices/{token}` | Stop pushing to a device, e.g. on log-out |
 | WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
+| GET | `/health` | `OK` when the server is up and can reach its database, otherwise 503. For Docker and uptime monitors |
 
 Run the server tests with `./gradlew :server:test`.
 
@@ -195,7 +196,8 @@ From the repository on your Windows machine:
 ```
 
 It builds the server and the web app, copies them to `~/drinkwater` on the VM and rebuilds and restarts the
-containers there. The database volume and `.env` are kept. Check on it with `docker compose logs -f` in `~/drinkwater`.
+containers there. The database volume and `.env` are kept. It waits until the new server passes its health check
+and fails if it doesn't; then look at `docker compose logs server` in `~/drinkwater`.
 
 Finally set `RELEASE_SERVER_URL` in `composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt` to
 `https://<your hostname>` and build the app again. The web app is at the same address.
@@ -237,6 +239,10 @@ so anyone could claim to be you.
 - The server's port isn't published on the VM, so it is only reachable through the tunnel; that is also why it can
   trust the `CF-Connecting-IP` header for rate limiting. To try it on your home network without the tunnel, add
   `ports: ["8080:8080"]` to the `server` service, but remove it again before going live.
+- To hear when the server is down, point an uptime monitor (UptimeRobot's free plan, for example) at
+  `https://<your hostname>/health`. It checks the whole way in, tunnel included. `docker ps` on the VM also shows
+  the server as `healthy` or `unhealthy`, but Docker doesn't restart an unhealthy container on its own; it does
+  restart one that exits, which the server does when it runs out of memory.
 - Back up the VM with Proxmox's scheduled backups (Datacenter → Backup). The database is the Docker volume inside it.
 - To turn on push, copy the Firebase key to `~/drinkwater/fcm-service-account.json` on the VM and add to the `server`
   service in `compose.yaml`:
