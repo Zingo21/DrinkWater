@@ -110,9 +110,10 @@ Playwright's Chromium can't subscribe to a real push service (no Google API keys
 `index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
 UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.
 
-**Server address.** Release builds start on `RELEASE_SERVER_URL` in `composeApp/.../ServerConfig.kt` (a
-placeholder `https://` URL until there is a real domain) and can switch to other `https://` servers from the login
-screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
+**Server address.** Release builds start on a URL set at build time so the domain stays out of the repository
+(`drinkwater.releaseServerUrl` Gradle property or `local.properties` on Android, where `checkReleaseServerUrl` fails
+release builds without an `https://` one and CI passes a placeholder; `RELEASE_SERVER_URL` in `Local.xcconfig` on iOS)
+and can switch to other `https://` servers from the login screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
 (`drinkwater.serverUrl` Gradle property or `local.properties` on Android, `DEV_SERVER_URL` in
 `iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch to any server, HTTP
 included. Plain HTTP is only allowed in debug (`src/androidDebug/AndroidManifest.xml`, `NSAllowsLocalNetworking`).

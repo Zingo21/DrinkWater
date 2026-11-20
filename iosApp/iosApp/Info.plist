@@ -24,6 +24,8 @@
 	<true/>
 	<key>DevServerUrl</key>
 	<string>$(DEV_SERVER_URL)</string>
+	<key>ReleaseServerUrl</key>
+	<string>$(RELEASE_SERVER_URL)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

@@ -8,18 +8,26 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ServerConfigTest {
+    private val devUrl = "http://10.0.2.2:8080"
+
     @Test
     fun `release builds start on the release server and can only switch to https`() {
-        val config = ServerConfig.forBuild(isDebug = false, devServerUrl = "http://10.0.2.2:8080")
-        assertEquals(RELEASE_SERVER_URL, config.url)
+        val config = ServerConfig.forBuild(isDebug = false, devServerUrl = devUrl, releaseServerUrl = "https://drink.example.com/")
+        assertEquals("https://drink.example.com", config.url)
         assertTrue(config.editable)
         assertTrue(config.httpsOnly)
-        assertTrue(RELEASE_SERVER_URL.startsWith("https://"))
+    }
+
+    @Test
+    fun `a release build without a usable address starts on none`() {
+        listOf("", "http://drink.example.com").forEach {
+            assertEquals("", ServerConfig.forBuild(isDebug = false, devServerUrl = devUrl, releaseServerUrl = it).url)
+        }
     }
 
     @Test
     fun `debug builds use the development server and can change it`() {
-        val config = ServerConfig.forBuild(isDebug = true, devServerUrl = "http://10.0.2.2:8080")
+        val config = ServerConfig.forBuild(isDebug = true, devServerUrl = devUrl, releaseServerUrl = "https://drink.example.com")
         assertEquals("http://10.0.2.2:8080", config.url)
         assertTrue(config.editable)
         assertFalse(config.httpsOnly)

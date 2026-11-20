@@ -16,8 +16,14 @@ private fun devServerUrl(): String =
         ?.let(::normalizeServerUrl)
         ?: "http://localhost:$SERVER_PORT"
 
+/** The server release builds start on, from `ReleaseServerUrl` in Info.plist (`RELEASE_SERVER_URL` in Local.xcconfig). */
+private fun releaseServerUrl(): String =
+    NSBundle.mainBundle.objectForInfoDictionaryKey("ReleaseServerUrl") as? String ?: ""
+
 @OptIn(ExperimentalNativeApi::class)
-private val server by lazy { ServerConfig.forBuild(kotlin.native.Platform.isDebugBinary, devServerUrl()) }
+private val server by lazy {
+    ServerConfig.forBuild(kotlin.native.Platform.isDebugBinary, devServerUrl(), releaseServerUrl())
+}
 
 @OptIn(ExperimentalSettingsImplementation::class)
 private val settings by lazy { KeychainSettings(service = "org.erbeenjoyers.drinkwater") }

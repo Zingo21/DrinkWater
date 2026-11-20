@@ -29,7 +29,8 @@ jobs:
         run: ./gradlew :composeApp:testDebugUnitTest
 
       - name: Build Android app (debug and release)
-        run: ./gradlew :composeApp:assembleDebug :composeApp:assembleRelease
+        # Release builds need a server address; any https:// one does for checking that it builds.
+        run: ./gradlew :composeApp:assembleDebug :composeApp:assembleRelease -Pdrinkwater.releaseServerUrl=https://drinkwater.example.com
 
       - name: Build web app
         run: ./gradlew :composeApp:wasmJsBrowserDistribution

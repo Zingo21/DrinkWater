@@ -93,6 +93,10 @@ fun localSetting(name: String): String? = providers.gradleProperty(name).orNull 
 
 val devServerUrl: String = localSetting("drinkwater.serverUrl") ?: "http://10.0.2.2:8080"
 
+// Where release builds connect, e.g. drinkwater.releaseServerUrl=https://drinkwater.example.com in local.properties.
+// Set at build time so the domain stays out of the repository; release builds refuse to build without it.
+val releaseServerUrl: String = localSetting("drinkwater.releaseServerUrl")?.trim()?.trimEnd('/').orEmpty()
+
 // The release signing key, see "Signing release builds" in README.md. Without it release builds come out unsigned.
 val releaseKeystore: String? = localSetting("drinkwater.signing.storeFile")
 
@@ -107,10 +111,10 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // The server debug builds start on; release builds always use RELEASE_SERVER_URL in
-        // ServerConfig.kt. 10.0.2.2 is the emulator's alias for the host machine. For a real device,
-        // set drinkwater.serverUrl=http://<your-ip>:8080 in local.properties or pass it with -P.
+        // The server debug builds start on. 10.0.2.2 is the emulator's alias for the host machine. For a real
+        // device, set drinkwater.serverUrl=http://<your-ip>:8080 in local.properties or pass it with -P.
         buildConfigField("String", "DEV_SERVER_URL", "\"$devServerUrl\"")
+        buildConfigField("String", "RELEASE_SERVER_URL", "\"$releaseServerUrl\"")
     }
     buildFeatures {
         buildConfig = true
@@ -146,3 +150,17 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 }
 
+// A release build that starts on no server is no use to the friends it is given to, so stop before building one.
+val checkReleaseServerUrl by tasks.registering {
+    val url = releaseServerUrl
+    doLast {
+        if (!Regex("^https://[a-z0-9.\\-\\[\\]:]+$", RegexOption.IGNORE_CASE).matches(url)) {
+            throw GradleException(
+                "Set drinkwater.releaseServerUrl to the server's https:// address, e.g. " +
+                    "drinkwater.releaseServerUrl=https://drinkwater.example.com in local.properties " +
+                    "(currently \"$url\"). See \"Server address\" in README.md.",
+            )
+        }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseServerUrl) }

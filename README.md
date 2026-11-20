@@ -94,11 +94,16 @@ Start the server with `./gradlew :server:run`, then run the app. The shared clie
 
 Any build can also switch server without rebuilding: tap **Server: …** at the bottom of the login screen.
 
-Release builds start on `RELEASE_SERVER_URL` in
-`composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt`, on both Android and iOS, so
-friends you give the app to don't have to type anything. They can still switch to another server, but only an
-`https://` one: only debug builds allow plain HTTP. `RELEASE_SERVER_URL` is a placeholder until the server has a
-real domain.
+### Server address
+
+Release builds start on a server address set when building, so friends you give the app to don't have to type
+anything and the domain stays out of the repository. They can still switch to another server, but only an
+`https://` one: only debug builds allow plain HTTP.
+
+* **Android** – add `drinkwater.releaseServerUrl=https://<your hostname>` to `local.properties`, or build with
+  `-Pdrinkwater.releaseServerUrl=...`. Release builds stop with an error without it.
+* **iOS** – add `RELEASE_SERVER_URL = https:/$()/<your hostname>` to `iosApp/Configuration/Local.xcconfig`. Without
+  it a release build starts on no server and has to be pointed at one on the login screen.
 
 ## Web app (iPhones without an Apple developer account)
 
@@ -199,8 +204,8 @@ It builds the server and the web app, copies them to `~/drinkwater` on the VM an
 containers there. The database volume and `.env` are kept. It waits until the new server passes its health check
 and fails if it doesn't; then look at `docker compose logs server` in `~/drinkwater`.
 
-Finally set `RELEASE_SERVER_URL` in `composeApp/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/ServerConfig.kt` to
-`https://<your hostname>` and build the app again. The web app is at the same address.
+Finally set `drinkwater.releaseServerUrl=https://<your hostname>` in `local.properties` and build the Android app
+again (see [Server address](#server-address)). The web app is at the same address.
 
 ### Admin panel
 
