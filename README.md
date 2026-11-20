@@ -165,20 +165,9 @@ The server runs in Docker on any Linux machine, for example a VM on a Proxmox se
 over HTTPS from anywhere without opening ports in the router, and also works without a public IP address.
 `compose.yaml` runs the server and the tunnel side by side, with the database in a Docker volume.
 
-### Once: the VM
-
-1. Create a Debian or Ubuntu VM in Proxmox (1 CPU and 1 GB of memory are plenty) and install Docker in it:
-   ```
-   curl -fsSL https://get.docker.com | sudo sh
-   sudo usermod -aG docker $USER
-   ```
-   Log out and in again so the group change applies.
-2. Let your Windows machine log in with a key, so deploying doesn't ask for a password (run in PowerShell; skip
-   `ssh-keygen` if you already have a key):
-   ```
-   ssh-keygen -t ed25519
-   type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh <user>@<vm-ip> "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
-   ```
+GitHub Actions builds the server and the web app into a Docker image on every change to `main`, after the tests
+pass, and publishes it as `ghcr.io/zingo21/drinkwater`. The VM only needs Docker, `compose.yaml` and a `.env`; it
+never sees the source code, Java or Gradle.
 
 ### Once: the tunnel
 
@@ -188,29 +177,44 @@ You need a free Cloudflare account and a domain whose DNS is managed by Cloudfla
    Choose Docker as the environment and copy the token from the command it shows (the long string after `--token`).
 2. Add a public hostname, for example `drinkwater.example.com`, with service type `HTTP` and URL `server:8080`.
    WebSockets work through the tunnel without extra settings.
-3. On the VM, create `~/drinkwater/.env` with the token and a long random JWT secret. Keep the secret: changing it
-   later logs everyone out.
+
+### Once: the VM
+
+1. Create an Ubuntu Server (or Debian) VM in Proxmox: 2 CPUs, 2 GB of memory and 20 GB of disk leave plenty of room.
+   Turn on "Start at boot" so the app comes back after a power cut.
+2. Log in to it as your own user and run:
    ```
-   mkdir -p ~/drinkwater
-   echo "JWT_SECRET=$(openssl rand -hex 32)" >> ~/drinkwater/.env
-   echo "TUNNEL_TOKEN=<token>" >> ~/drinkwater/.env
-   chmod 600 ~/drinkwater/.env
+   curl -fsSL https://raw.githubusercontent.com/Zingo21/DrinkWater/main/setup.sh | bash
    ```
+   It installs Docker, asks for the tunnel token and an e-mail address for [web push](#web-app), creates
+   `~/drinkwater/.env` with a random JWT secret, asks whether to install updates automatically, and starts the
+   server and the tunnel. Running it again is safe: it keeps `.env` and the database.
+3. Open `https://<your hostname>/health`; it should say `OK`. The web app is at `https://<your hostname>/`.
 
-### Every deploy
-
-From the repository on your Windows machine:
-
-```
-.\deploy.ps1 <user>@<vm-ip>
-```
-
-It builds the server and the web app, copies them to `~/drinkwater` on the VM and rebuilds and restarts the
-containers there. The database volume and `.env` are kept. It waits until the new server passes its health check
-and fails if it doesn't; then look at `docker compose logs server` in `~/drinkwater`.
+Keep `JWT_SECRET` in `.env`: changing it later logs everyone out. If the VM can't pull the image (`denied` or
+`unauthorized`), the package is private: on GitHub open your profile → Packages → drinkwater → Package settings and
+change its visibility to public. The image holds no secrets; those are in `.env`.
 
 Finally set `drinkwater.releaseServerUrl=https://<your hostname>` in `local.properties` and build the Android app
-again (see [Server address](#server-address)). The web app is at the same address.
+(see [Server address](#server-address)).
+
+### Updates
+
+Merge to `main` and wait for the build on GitHub to finish. With automatic updates on, the VM installs the new
+image within five minutes. Otherwise, on the VM:
+
+```
+~/drinkwater/update.sh
+```
+
+It pulls the newest image, restarts the server and waits until it passes its health check, and fails if it
+doesn't; then `docker compose logs server` in `~/drinkwater` says why. The database and `.env` are kept, and new
+database columns are added on start. Running `setup.sh` again also fetches a newer `compose.yaml`.
+
+To go back to an earlier version, add `DRINKWATER_IMAGE=ghcr.io/zingo21/drinkwater:sha-<first 7 characters of the
+commit>` to `.env` and run `update.sh`; remove the line to follow `main` again. Automatic updates are a systemd
+timer: `sudo systemctl disable --now drinkwater-update.timer` turns them off, running `setup.sh` again and answering
+yes turns them on.
 
 ### Admin panel
 
@@ -229,7 +233,7 @@ nobody else's. The app itself stays behind the Cloudflare Tunnel as before.
    ```
    echo "ADMIN_TAILSCALE_USERS=you@example.com" >> ~/drinkwater/.env
    ```
-3. Deploy as usual, then make the panel reachable in your tailnet:
+3. Run `~/drinkwater/update.sh` so the server picks it up, then make the panel reachable in your tailnet:
    ```
    sudo tailscale serve --bg --https=8443 8090
    ```
@@ -248,20 +252,25 @@ so anyone could claim to be you.
 
 - The server's port isn't published on the VM, so it is only reachable through the tunnel; that is also why it can
   trust the `CF-Connecting-IP` header for rate limiting. To try it on your home network without the tunnel, add
-  `ports: ["8080:8080"]` to the `server` service, but remove it again before going live.
+  `ports: ["8080:8080"]` to the `server` service in `compose.override.yaml` (below), but remove it again before
+  going live.
 - To hear when the server is down, point an uptime monitor (UptimeRobot's free plan, for example) at
   `https://<your hostname>/health`. It checks the whole way in, tunnel included. `docker ps` on the VM also shows
   the server as `healthy` or `unhealthy`, but Docker doesn't restart an unhealthy container on its own; it does
   restart one that exits, which the server does when it runs out of memory.
 - Back up the VM with Proxmox's scheduled backups (Datacenter → Backup). The database is the Docker volume inside it.
-- To turn on push, copy the Firebase key to `~/drinkwater/fcm-service-account.json` on the VM and add to the `server`
-  service in `compose.yaml`:
+- Changes of your own to the containers go in `~/drinkwater/compose.override.yaml`, which Docker Compose merges into
+  `compose.yaml`; `setup.sh` replaces `compose.yaml` but leaves the override alone. For example, to turn on push to
+  the Android app, copy the Firebase key to `~/drinkwater/fcm-service-account.json` and create the override with:
   ```
+  services:
+    server:
       environment:
         FCM_SERVICE_ACCOUNT_FILE: /secrets/fcm.json
       volumes:
         - ./fcm-service-account.json:/secrets/fcm.json:ro
   ```
+  then run `update.sh`.
 - Keep it to one server container: the database, the live notification connections and the rate limits are all local
   to it.
 - The image also runs on any other Docker host or service: mount a volume at `/data` and set `JWT_SECRET`.
@@ -278,7 +287,8 @@ it is set up.
    ```
    echo "WEB_PUSH_SUBJECT=mailto:you@example.com" >> ~/drinkwater/.env
    ```
-   and deploy. The server makes its web push keys on first start and keeps them in the data volume
+   and run `~/drinkwater/update.sh` (`setup.sh` asks for this address, so skip this step if you gave it there).
+   The server makes its web push keys on first start and keeps them in the data volume
    (`/data/vapid.keys`). Keep that file: browsers subscribed with one key can't be reached with another.
 2. In the web app a banner offers to turn notifications on; tapping **Turn on** asks the browser.
    On an iPhone this only works in the app added to the Home Screen (iOS 16.4 and later), not in a Safari

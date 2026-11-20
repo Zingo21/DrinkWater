@@ -1,6 +1,6 @@
-# The server and the web app it serves. Gradle runs on the host, not in here, because configuring the
-# project needs the Android SDK. Build first:
-#   ./gradlew :server:installDist :composeApp:wasmJsBrowserDistribution
+# The server and the web app it serves. CI builds it and publishes it from main (.github/workflows/build.yml).
+# Gradle runs before this, not in here, because configuring the project needs the Android SDK. To build it yourself:
+#   ./gradlew :server:installDist :composeApp:wasmJsBrowserDistribution && docker build .
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
@@ -16,7 +16,7 @@ ENV JAVA_OPTS="-Dio.ktor.development=false -XX:+ExitOnOutOfMemoryError" \
 
 VOLUME /data
 EXPOSE 8080
-# Shows as healthy or unhealthy in `docker ps`, and `docker compose up --wait` waits for it. Docker itself doesn't
+# Shows as healthy or unhealthy in `docker ps`, and `docker compose up --wait` in update.sh waits for it. Docker itself doesn't
 # restart an unhealthy container; an uptime monitor on /health is what tells you (README, "Hosting the server").
 HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=3 \
     CMD curl -fsS -o /dev/null http://localhost:8080/health || exit 1

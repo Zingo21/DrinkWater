@@ -23,8 +23,8 @@ table, environment variables and device setup.
 ./gradlew :server:run --args="reset-password <username>"   # maintenance command, see Commands.kt
 ```
 
-CI (`.github/workflows/build.yml`) runs exactly the server tests, app tests, debug + release APK builds and
-the web build.
+CI (`.github/workflows/build.yml`) runs exactly the server tests, app tests, debug + release APK builds, the web
+build and the server image build (published from `main`).
 Build release too when touching Android dependencies: `lintVitalRelease` only runs there (it once caught an old
 Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcode; its Kotlin code in
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
@@ -37,12 +37,16 @@ if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, of
 The app picks up `composeApp/google-services.json` only if
 the file exists.
 
-Deployment: `Dockerfile` + `compose.yaml` (server + Cloudflare Tunnel) on a Docker host, pushed with `deploy.ps1`
-(README, "Hosting the server"). The image only copies `server/build/install/server` and the web build, so those are
-built with Gradle before the image (`deploy.ps1` does it). The server and `shared`
-target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file, WebSocket sessions and
-rate limits in memory). The image's `HEALTHCHECK` curls `/health` (`routes/HealthRoutes.kt`, which also
-queries the database), and `deploy.ps1` waits for it with `docker compose up --wait`.
+Deployment (README, "Hosting the server"): CI builds the `Dockerfile` on every run and on `main` publishes it to
+`ghcr.io/<owner>/drinkwater` (`:latest` and `:sha-<commit>`, amd64 + arm64). The image only copies
+`server/build/install/server` and the web build, so Gradle builds those first, outside Docker, because configuring
+the project needs the Android SDK; with no `RUN` steps, arm64 needs no emulation. On the Docker host, `setup.sh`
+(run with `curl | bash`) installs Docker, writes `~/drinkwater/{compose.yaml,.env,update.sh}` and optionally a
+systemd timer that runs `update.sh` (`docker compose pull` + `up --wait`) every five minutes. `compose.yaml` runs the
+image plus a Cloudflare Tunnel; host-specific additions go in `compose.override.yaml`, which `setup.sh` never touches.
+The server and `shared` target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file,
+WebSocket sessions and rate limits in memory). The image's `HEALTHCHECK` curls `/health` (`routes/HealthRoutes.kt`,
+which also queries the database), which `up --wait` waits for.
 
 ## Architecture
 

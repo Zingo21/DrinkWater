@@ -1,5 +1,6 @@
-# The server behind a Cloudflare Tunnel, see "Hosting the server" in README.md. JWT_SECRET and TUNNEL_TOKEN
-# come from a .env file next to this one on the Docker host.
+# The server behind a Cloudflare Tunnel, see "Hosting the server" in README.md. setup.sh puts this file on the
+# Docker host next to a .env with JWT_SECRET, TUNNEL_TOKEN and the rest, and update.sh pulls the newest image.
+# Local additions, like the FCM key, go in compose.override.yaml next to it: setup.sh replaces this file.
 # Docker keeps container logs forever by default; this caps them at 3 files of 10 MB per container.
 x-logging: &logging
   driver: json-file
@@ -9,7 +10,9 @@ x-logging: &logging
 
 services:
   server:
-    build: .
+    # Built and published by GitHub Actions from main (.github/workflows/build.yml). To go back to an earlier
+    # version, set DRINKWATER_IMAGE=ghcr.io/zingo21/drinkwater:sha-<commit> in .env and run update.sh.
+    image: ${DRINKWATER_IMAGE:-ghcr.io/zingo21/drinkwater:latest}
     restart: unless-stopped
     logging: *logging
     environment:
