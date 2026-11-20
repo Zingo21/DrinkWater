@@ -97,6 +97,18 @@ val devServerUrl: String = localSetting("drinkwater.serverUrl") ?: "http://10.0.
 // Set at build time so the domain stays out of the repository; release builds refuse to build without it.
 val releaseServerUrl: String = localSetting("drinkwater.releaseServerUrl")?.trim()?.trimEnd('/').orEmpty()
 
+// The number of commits up to the one being built, which becomes versionCode: every commit raises it, so a newer
+// APK always installs over an older one without anyone remembering to bump it. Count on main, the branch releases
+// are built from. Null when git can't tell (not on the PATH, or not a checkout); a shallow clone, as in CI, counts 1.
+val commitCount: Int? = try {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toIntOrNull()
+} catch (e: Exception) {
+    null
+}
+
 // The release signing key, see "Signing release builds" in README.md. Without it release builds come out unsigned.
 val releaseKeystore: String? = localSetting("drinkwater.signing.storeFile")
 
@@ -108,7 +120,7 @@ android {
         applicationId = "org.erbeenjoyers.drinkwater"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
+        versionCode = commitCount ?: 1
         versionName = "1.0"
 
         // The server debug builds start on. 10.0.2.2 is the emulator's alias for the host machine. For a real
@@ -163,4 +175,15 @@ val checkReleaseServerUrl by tasks.registering {
         }
     }
 }
-tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseServerUrl) }
+
+// Without git versionCode would be 1, and phones refuse to install that over a newer version.
+val checkVersionCode by tasks.registering {
+    val count = commitCount
+    doLast {
+        if (count == null) {
+            throw GradleException("versionCode comes from `git rev-list --count HEAD`, which failed. Build release from a git checkout with git on the PATH.")
+        }
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseServerUrl, checkVersionCode) }

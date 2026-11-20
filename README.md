@@ -153,6 +153,11 @@ drinkwater.signing.keyPassword=<key password>
 `./gradlew :composeApp:assembleRelease` then writes a signed APK to `composeApp/build/outputs/apk/release/`. The same
 keys also work as `-P` Gradle properties. Without them the release build still works but is unsigned, which is what CI builds.
 
+To update the app, build a new release with the same key and give it to everyone; it installs over the old one and
+keeps what is on the phone. The `versionCode` Android compares is the number of git commits, so it goes up by
+itself with every commit; build releases from `main` so it never goes down. `versionName`, the version people see,
+is set by hand in `composeApp/build.gradle.kts`.
+
 ## Hosting the server
 
 The server runs in Docker on any Linux machine, for example a VM on a Proxmox server at home. A

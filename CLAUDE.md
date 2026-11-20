@@ -112,7 +112,7 @@ UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordi
 
 **Server address.** Release builds start on a URL set at build time so the domain stays out of the repository
 (`drinkwater.releaseServerUrl` Gradle property or `local.properties` on Android, where `checkReleaseServerUrl` fails
-release builds without an `https://` one and CI passes a placeholder; `RELEASE_SERVER_URL` in `Local.xcconfig` on iOS)
+release builds without an `https://` one and CI passes a placeholder; `versionCode` is the git commit count; `RELEASE_SERVER_URL` in `Local.xcconfig` on iOS)
 and can switch to other `https://` servers from the login screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
 (`drinkwater.serverUrl` Gradle property or `local.properties` on Android, `DEV_SERVER_URL` in
 `iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch to any server, HTTP
