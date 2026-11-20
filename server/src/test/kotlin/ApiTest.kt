@@ -64,6 +64,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class ApiTest {
     /** Records what would have been pushed. Tokens in [dead] are reported as no longer registered. */
@@ -556,11 +557,11 @@ class ApiTest {
             coroutineScope {
                 val connected = CompletableDeferred<Unit>()
                 val tabletLive = async { tablet.notifications { connected.complete(Unit) }.toList() }
-                withTimeout(5_000) { connected.await() }
+                withTimeout(5.seconds) { connected.await() }
 
                 assertEquals(anna, phone.logOutOtherDevices(keepDevice = "phone").user)
                 // The server closed the tablet's connection, so its flow ends.
-                withTimeout(5_000) { tabletLive.await() }
+                withTimeout(5.seconds) { tabletLive.await() }
             }
 
             assertEquals(anna, phone.me())

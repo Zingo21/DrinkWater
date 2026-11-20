@@ -12,8 +12,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.reminders.nextReminder
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.greater
-import org.jetbrains.exposed.sql.SqlExpressionBuilder.isNotNull
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.selectAll
 import org.slf4j.LoggerFactory
