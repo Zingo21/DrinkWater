@@ -22,8 +22,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import org.erbeenjoyers.drinkwater.REMINDER_INTERVALS_MINUTES
-import org.erbeenjoyers.drinkwater.ReminderSettings
+import org.erbeenjoyers.drinkwater.api.REMINDER_INTERVALS_MINUTES
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 
 /** Lets the user turn their own drink reminders on and choose when they come. */
 @Composable

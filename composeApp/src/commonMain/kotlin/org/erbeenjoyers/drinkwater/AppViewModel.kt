@@ -27,11 +27,13 @@ import org.erbeenjoyers.drinkwater.api.FriendRequestDto
 import org.erbeenjoyers.drinkwater.api.FriendRequestResult
 import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.Notification
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.api.StatsDto
 import org.erbeenjoyers.drinkwater.api.UserDto
 import org.erbeenjoyers.drinkwater.api.describe
 import org.erbeenjoyers.drinkwater.client.ApiError
 import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
+import org.erbeenjoyers.drinkwater.reminders.nextReminder
 
 /** [notice] is news for the user that isn't an error, e.g. that their account was deleted. */
 data class AuthState(val busy: Boolean = false, val error: String? = null, val notice: String? = null)
@@ -111,8 +113,10 @@ class AppViewModel(
     var account by mutableStateOf(AccountState())
         private set
 
-    /** Whether this device can remind the user to drink at all. */
-    val canRemind: Boolean get() = reminders != null
+    /** Whether this device can remind the user to drink at all, by itself or through the server. */
+    val canRemind: Boolean get() = reminders != null || remindersFromServer
+
+    private val remindersFromServer: Boolean get() = push?.remindersFromServer == true
 
     private val _messages = Channel<String>(Channel.BUFFERED)
 
@@ -191,6 +195,15 @@ class AppViewModel(
         reminderStore.save(settings)
         reminderSettings = settings
         planReminder()
+        // Without push permission yet there is no token, and the settings go along once there is one.
+        if (remindersFromServer) registerForPush()
+    }
+
+    /** The user turned reminders on, but this device may not show notifications, so they can't arrive. */
+    fun notificationsDenied() {
+        launchInSession {
+            _messages.send("Reminders need notifications. Allow them for DrinkWater, on an iPhone from the home screen app.")
+        }
     }
 
     fun loadDrinks() {
@@ -445,7 +458,12 @@ class AppViewModel(
         launchInSession {
             try {
                 val token = push.token() ?: return@launchInSession
-                api.registerDevice(token, push.platform)
+                api.registerDevice(
+                    token,
+                    push.platform,
+                    reminders = reminderSettings.takeIf { push.remindersFromServer },
+                    timeZone = timeZone(),
+                )
                 registeredPushToken = token
             } catch (e: Exception) {
                 if (e is CancellationException) throw e

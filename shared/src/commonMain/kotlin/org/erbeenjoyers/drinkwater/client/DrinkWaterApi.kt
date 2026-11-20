@@ -40,6 +40,7 @@ import org.erbeenjoyers.drinkwater.api.DeleteAccountRequest
 import org.erbeenjoyers.drinkwater.api.DEFAULT_AMOUNT_ML
 import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.api.DrinkDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
@@ -207,12 +208,18 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
 
     /**
      * Makes this device get the logged-in user's push notifications. [deviceToken] comes from Firebase Cloud
-     * Messaging, or for [DevicePlatform.WEB] is the browser's push subscription as JSON.
+     * Messaging, or for [DevicePlatform.WEB] is the browser's push subscription as JSON. With [reminders] the
+     * server also pushes the device's drink reminders, see [DeviceRegistration].
      */
-    suspend fun registerDevice(deviceToken: String, platform: DevicePlatform) {
+    suspend fun registerDevice(
+        deviceToken: String,
+        platform: DevicePlatform,
+        reminders: ReminderSettings? = null,
+        timeZone: String? = null,
+    ) {
         client.put("/me/devices") {
             authorize()
-            jsonBody(DeviceRegistration(deviceToken, platform))
+            jsonBody(DeviceRegistration(deviceToken, platform, reminders, timeZone))
         }.result<Unit>()
     }
 

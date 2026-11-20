@@ -70,7 +70,10 @@ summarized for push via `describe()`.
 - **Notifications:** `NotificationService` sends to a user's open `/notifications` WebSockets (several devices
   per user); if none got it, it pushes to their registered devices through `PushSender` in the background scope:
   `PlatformPushSender` sends `WEB` devices (token = the browser's subscription JSON) through `WebPushSender` and the
-  rest through `FcmPushSender`, each `NoPush` when unconfigured. Web subscriptions must point at a known push service
+  rest through `FcmPushSender`, each `NoPush` when unconfigured. `ReminderService` runs a loop in the application
+scope that each minute pushes the reminders of devices that registered reminder settings (the web app's),
+computing due times with the shared `nextReminder` (`shared/.../reminders/`), the same function Android schedules with;
+it stores nothing about sent reminders, it checks whether one fell between the previous check and now. Web subscriptions must point at a known push service
   (`WebPushSubscription.parse`), or the server could be made to post anywhere. Nudge rate limiting is in memory in `FriendService`.
 - **Time zones:** stats, streaks and the leaderboard are computed per request in the caller's IANA zone (`tz`
   parameter / `timeZone` field, default UTC), see `services/Stats.kt`.
@@ -95,12 +98,14 @@ register/login take ~0.25 s.
 `feed`, `account` state as Compose `mutableStateOf`); screens in `ui/` are stateless and get state + callbacks.
 Coroutines for the logged-in user run under `sessionJob` (`launchInSession`) so logging out cancels them all.
 Platform pieces are injected as interfaces from `MainActivity` / `MainViewController`: `PushRegistration`,
-`ReminderScheduler` (Android only so far), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
+`ReminderScheduler` (Android only; the web app's reminders come from the server), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
 iOS) used by `SessionStore`, `ReminderStore` and `ServerUrlStore`.
 
 **Web target.** `wasmJsMain/main.kt` uses localStorage for `Settings` and the page's own origin as the server.
 `WebPush.kt` is both its `PushRegistration` and its `NotificationPrompt` (the "Turn on" banner in `MainScreen`;
-browsers only ask for permission from a click), and `resources/sw.js` shows the pushes. No reminders there yet.
+browsers only ask for permission from a click), and `resources/sw.js` shows the pushes. Browsers can't schedule a
+notification, so the web app's reminders come from the server: `WebPush.remindersFromServer` makes `AppViewModel`
+send the device's `ReminderSettings` and time zone with every `registerDevice`.
 Playwright's Chromium can't subscribe to a real push service (no Google API keys, and none in incognito contexts). Time zones need the `@js-joda/timezone` npm package it references.
 `index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
 UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.

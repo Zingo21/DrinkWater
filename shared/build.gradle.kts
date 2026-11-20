@@ -35,6 +35,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(libs.kotlinx.serialization.json)
+            // For nextReminder, which the server and the app both use.
+            api(libs.kotlinx.datetime)
             api(libs.ktor.client.core)
             implementation(libs.ktor.client.content.negotiation)
             implementation(libs.ktor.client.websockets)

@@ -18,7 +18,18 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
-data class PushMessage(val title: String, val body: String)
+/**
+ * @param tag where the platform supports it (the web), a newer push with the same tag replaces this one, both on
+ *   screen and while still waiting at the push service.
+ * @param ttlSeconds how long the push service keeps trying to reach a device that is offline. News of what a
+ *   friend did is stale after a day.
+ */
+data class PushMessage(
+    val title: String,
+    val body: String,
+    val tag: String? = null,
+    val ttlSeconds: Int = 24 * 3600,
+)
 
 /** A device that gets a user's pushes; for [DevicePlatform.WEB] the token is a browser's push subscription. */
 data class Device(val token: String, val platform: DevicePlatform)

@@ -45,6 +45,7 @@ import org.erbeenjoyers.drinkwater.api.LoginRequest
 import org.erbeenjoyers.drinkwater.api.NOTIFICATIONS_PROTOCOL
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.RegisterRequest
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.api.UserDto
 import org.erbeenjoyers.drinkwater.client.ApiError
 import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
@@ -643,6 +644,15 @@ class ApiTest {
                 """"keys":{"p256dh":"BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM",""" +
                 """"auth":"tBHItJI5svbpez7KI4CCXg"}}"""
             api.registerDevice(subscription, DevicePlatform.WEB)
+            api.registerDevice(subscription, DevicePlatform.WEB, ReminderSettings(enabled = true), "Europe/Stockholm")
+            listOf(
+                ReminderSettings(enabled = true, startHour = 20, endHour = 8) to "Europe/Stockholm",
+                ReminderSettings(enabled = true, intervalMinutes = 0) to "Europe/Stockholm",
+                ReminderSettings(enabled = true) to "Mars/Olympus_Mons",
+            ).forEach { (reminders, zone) ->
+                val invalid = assertFailsWith<ApiError> { api.registerDevice(subscription, DevicePlatform.WEB, reminders, zone) }
+                assertEquals(HttpStatusCode.BadRequest, invalid.status)
+            }
             api.unregisterDevice(subscription)
 
             val elsewhere = subscription.replace("web.push.apple.com", "example.com")

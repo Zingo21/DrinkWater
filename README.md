@@ -59,7 +59,7 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | DELETE 🔒 | `/me/drinks/{id}` | Remove one of your logs |
 | GET 🔒 | `/me/stats` | Today's total, daily goal, streak and the last seven days. `tz` is an IANA time zone such as `Europe/Stockholm` (default UTC) |
 | PUT 🔒 | `/me/goal` | Set your daily goal in ml |
-| PUT 🔒 | `/me/devices` | Register this device for push: its FCM token, or a browser's push subscription (`WEB`) |
+| PUT 🔒 | `/me/devices` | Register this device for push: its FCM token, or a browser's push subscription (`WEB`). Optional `reminders` and `timeZone` make the server push its drink reminders |
 | GET | `/push/web-key` | The key browsers subscribe to web push with; 404 when web push is off |
 | DELETE 🔒 | `/me/devices/{token}` | Stop pushing to a device, e.g. on log-out |
 | WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
@@ -124,7 +124,7 @@ then opens full screen like an app. This needs the server on `https://`.
 Browsers can't send an `Authorization` header when they open a WebSocket, so the web app sends its token
 for `/notifications` as the subprotocols `drinkwater, <token>` instead. The session is kept in the
 browser's localStorage. Push notifications work once the server has web push turned on, see
-[Push notifications](#push-notifications); the web app has no reminders yet.
+[Push notifications](#push-notifications), and so do [reminders](#reminders).
 
 ## Signing release builds
 
@@ -290,7 +290,15 @@ register for push; iPhones get it through the web app.
 
 ## Reminders
 
-The Android app can remind you to drink when you haven't logged anything for a while. Turn it on under
-the settings icon in the top bar, where you also choose how long to wait and between which hours
-reminders are allowed. Reminders are scheduled on the phone itself, so they need neither the server
-nor Firebase, and they stop for the day once you reach your goal. The iOS app has no reminders yet.
+The Android app and the web app can remind you to drink when you haven't logged anything for a while. Turn it
+on under the settings icon in the top bar, where you also choose how long to wait and between which hours
+reminders are allowed. They stop for the day once you reach your goal. The settings belong to the device, so a
+phone and a computer can remind differently.
+
+- **Android** schedules them on the phone itself, so they need neither the server nor Firebase.
+- **The web app** can't: a browser can't show a notification at a set time. It sends its settings and time zone
+  to the server along with its push subscription, and the server checks every minute whose reminder is due and
+  pushes it (`services/ReminderService.kt`). So they need [web push](#web-app) turned on, notifications allowed
+  (on an iPhone in the Home Screen app), and the server running. Reminders due while it was down are skipped.
+
+Both work out the times with the same function, `nextReminder` in `shared`. The native iOS app has no reminders.

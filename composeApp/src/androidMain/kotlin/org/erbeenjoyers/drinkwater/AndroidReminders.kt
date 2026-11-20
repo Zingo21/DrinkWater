@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
+import org.erbeenjoyers.drinkwater.reminders.nextReminder
 
 private const val ACTION_REMIND = "org.erbeenjoyers.drinkwater.REMIND"
 private const val CHANNEL_ID = "reminders"

@@ -31,6 +31,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.pingPeriod
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.erbeenjoyers.drinkwater.api.ErrorResponse
 import push.PushSender
@@ -48,6 +49,7 @@ import services.DeviceService
 import services.DrinkService
 import services.FriendService
 import services.NotificationService
+import services.ReminderService
 import services.UserService
 import kotlin.system.exitProcess
 import kotlin.time.Duration.Companion.minutes
@@ -107,6 +109,10 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
     val userService = UserService(db)
     val friendService = FriendService(db, userService, notificationService)
     val drinkService = DrinkService(db, userService, friendService, notificationService)
+
+    // Runs in the application's scope, so it stops with the server.
+    val reminderService = ReminderService(db, deviceService, push)
+    launch { reminderService.run() }
 
     config.admin?.let { startAdminPanel(it, AdminService(db), userService, notificationService) }
 

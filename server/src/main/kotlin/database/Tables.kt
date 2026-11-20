@@ -62,5 +62,13 @@ object DeviceTokens : Table() {
     val token = varchar("token", 2048).uniqueIndex()
     val platform = enumerationByName<DevicePlatform>("platform", 10)
     val updatedAt = long("updated_at")
+
+    /** The device's drink reminders, which the server pushes (the web app's); null when they are off. */
+    val reminderIntervalMinutes = integer("reminder_interval_minutes").nullable()
+    val reminderStartHour = integer("reminder_start_hour").default(8)
+    val reminderEndHour = integer("reminder_end_hour").default(22)
+
+    /** The IANA zone the reminders' hours and days follow; null is UTC. */
+    val timeZone = varchar("time_zone", 64).nullable()
     override val primaryKey = PrimaryKey(id)
 }
