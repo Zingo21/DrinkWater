@@ -3,27 +3,22 @@ package org.erbeenjoyers.drinkwater
 import com.russhwolf.settings.Settings
 
 /**
- * The server release builds start on, on both Android and iOS. Must be `https://`: release builds
- * don't allow plain HTTP. Change it to your own domain before publishing the app.
- */
-const val RELEASE_SERVER_URL = "https://drinkwater.example.com"
-
-/**
  * Which server the app talks to. [url] is where it starts; when [editable] the user can point the
  * app at another server from the login screen. [httpsOnly] servers are all a release build can reach.
  */
 data class ServerConfig(val url: String, val editable: Boolean, val httpsOnly: Boolean = false) {
     companion object {
         /**
-         * Release builds start on [RELEASE_SERVER_URL] and can switch to another `https://` server, e.g. when
-         * friends run their own. Debug builds start on [devServerUrl], set at build time, and can also use
-         * plain HTTP, for testing against a computer on the same network.
+         * Release builds start on [releaseServerUrl] and can switch to another `https://` server, e.g. when
+         * friends run their own. Debug builds start on [devServerUrl] and can also use plain HTTP, for testing
+         * against a computer on the same network. Both are set at build time, so the domain isn't in the code.
+         * A release build without a usable server address starts on none, and the user picks one on the login screen.
          */
-        fun forBuild(isDebug: Boolean, devServerUrl: String): ServerConfig =
+        fun forBuild(isDebug: Boolean, devServerUrl: String, releaseServerUrl: String): ServerConfig =
             if (isDebug) {
                 ServerConfig(devServerUrl, editable = true)
             } else {
-                ServerConfig(RELEASE_SERVER_URL, editable = true, httpsOnly = true)
+                ServerConfig(normalizeServerUrl(releaseServerUrl, httpsOnly = true).orEmpty(), editable = true, httpsOnly = true)
             }
     }
 }

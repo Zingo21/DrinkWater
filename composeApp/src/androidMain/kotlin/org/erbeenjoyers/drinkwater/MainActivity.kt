@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             App(
                 settings,
-                ServerConfig.forBuild(BuildConfig.DEBUG, BuildConfig.DEV_SERVER_URL),
+                ServerConfig.forBuild(BuildConfig.DEBUG, BuildConfig.DEV_SERVER_URL, BuildConfig.RELEASE_SERVER_URL),
                 push,
                 reminders,
                 onRemindersEnabled = ::askForNotificationPermission,

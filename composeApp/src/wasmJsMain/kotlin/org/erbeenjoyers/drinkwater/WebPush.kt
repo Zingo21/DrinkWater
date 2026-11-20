@@ -18,6 +18,7 @@ class WebPush(
     private val serverKey: suspend () -> String?,
 ) : PushRegistration, NotificationPrompt {
     override val platform = DevicePlatform.WEB
+    override val remindersFromServer = true
 
     /** The subscription as JSON, without ever asking the user: that is [ask], from a click. */
     override suspend fun token(): String? {
@@ -45,6 +46,8 @@ class WebPush(
     }
 
     override fun ask(onAnswer: (granted: Boolean) -> Unit) {
+        // E.g. Safari in a tab on an iPhone, which has no Notification at all.
+        if (!pushSupported()) return onAnswer(false)
         requestNotificationPermission { answer -> onAnswer(answer.toString() == "granted") }
     }
 

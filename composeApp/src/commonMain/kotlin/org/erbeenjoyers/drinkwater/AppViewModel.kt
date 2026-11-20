@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
+import kotlin.time.Duration.Companion.days
 import org.erbeenjoyers.drinkwater.api.AuthResponse
 import org.erbeenjoyers.drinkwater.api.DrinkDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
@@ -27,11 +28,13 @@ import org.erbeenjoyers.drinkwater.api.FriendRequestDto
 import org.erbeenjoyers.drinkwater.api.FriendRequestResult
 import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.Notification
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.api.StatsDto
 import org.erbeenjoyers.drinkwater.api.UserDto
 import org.erbeenjoyers.drinkwater.api.describe
 import org.erbeenjoyers.drinkwater.client.ApiError
 import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
+import org.erbeenjoyers.drinkwater.reminders.nextReminder
 
 /** [notice] is news for the user that isn't an error, e.g. that their account was deleted. */
 data class AuthState(val busy: Boolean = false, val error: String? = null, val notice: String? = null)
@@ -66,7 +69,7 @@ data class FriendsState(
     val working: Boolean = false,
 )
 
-enum class AccountDialog { ChangePassword, DeleteAccount }
+enum class AccountDialog { ChangePassword, LogOutOthers, DeleteAccount }
 
 data class AccountState(
     /** The account dialog that is open, if any. */
@@ -111,8 +114,10 @@ class AppViewModel(
     var account by mutableStateOf(AccountState())
         private set
 
-    /** Whether this device can remind the user to drink at all. */
-    val canRemind: Boolean get() = reminders != null
+    /** Whether this device can remind the user to drink at all, by itself or through the server. */
+    val canRemind: Boolean get() = reminders != null || remindersFromServer
+
+    private val remindersFromServer: Boolean get() = push?.remindersFromServer == true
 
     private val _messages = Channel<String>(Channel.BUFFERED)
 
@@ -127,6 +132,9 @@ class AppViewModel(
     /** The push token the server currently has for this device, if any. */
     private var registeredPushToken: String? = null
 
+    /** When this session last got a fresh token, see [refreshTokenIfDue]. */
+    private var lastTokenRefresh: Instant? = null
+
     init {
         sessions.load()?.let { session ->
             api.token = session.token
@@ -135,6 +143,7 @@ class AppViewModel(
             refreshStats()
             refreshFriends()
             registerForPush()
+            refreshTokenIfDue()
         }
     }
 
@@ -161,8 +170,25 @@ class AppViewModel(
 
     /** Other devices are logged out; this one carries on with the new token the server sends back. */
     fun changePassword(currentPassword: String, newPassword: String) = changeAccount {
-        sessions.save(api.changePassword(currentPassword, newPassword))
+        sessions.save(api.changePassword(currentPassword, newPassword, keepDevice = registeredPushToken))
+        afterOtherSessionsEnded()
         _messages.send("Password changed. Your other devices have been logged out.")
+    }
+
+    /** For a lost phone, or a password someone else knows; this device carries on with a new token. */
+    fun logOutOtherDevices() = changeAccount {
+        sessions.save(api.logOutOtherDevices(keepDevice = registeredPushToken))
+        afterOtherSessionsEnded()
+        _messages.send("Your other devices have been logged out.")
+    }
+
+    /**
+     * The server forgot every other device's push registration. This one's was kept if it was known, but it may
+     * have been on its way still, so register again; the token is fresh, so no refresh is due for a while.
+     */
+    private fun afterOtherSessionsEnded() {
+        lastTokenRefresh = Clock.System.now()
+        registerForPush()
     }
 
     fun deleteAccount(password: String) = changeAccount {
@@ -180,6 +206,7 @@ class AppViewModel(
         sessions.clear()
         api.token = null
         user = null
+        lastTokenRefresh = null
         home = HomeState()
         stats = StatsState()
         friends = FriendsState()
@@ -191,6 +218,15 @@ class AppViewModel(
         reminderStore.save(settings)
         reminderSettings = settings
         planReminder()
+        // Without push permission yet there is no token, and the settings go along once there is one.
+        if (remindersFromServer) registerForPush()
+    }
+
+    /** The user turned reminders on, but this device may not show notifications, so they can't arrive. */
+    fun notificationsDenied() {
+        launchInSession {
+            _messages.send("Reminders need notifications. Allow them for DrinkWater, on an iPhone from the home screen app.")
+        }
     }
 
     fun loadDrinks() {
@@ -319,6 +355,7 @@ class AppViewModel(
         if (listening?.isActive == true) return
         // The app is back on screen, possibly on a new day.
         refreshStats()
+        refreshTokenIfDue()
         listening = launchInSession {
             var retryDelayMs = INITIAL_RETRY_DELAY_MS
             while (true) {
@@ -364,6 +401,7 @@ class AppViewModel(
                 val session = request()
                 sessions.save(session)
                 user = session.user
+                lastTokenRefresh = Clock.System.now()
                 loadDrinks()
                 refreshStats()
                 refreshFriends()
@@ -445,7 +483,12 @@ class AppViewModel(
         launchInSession {
             try {
                 val token = push.token() ?: return@launchInSession
-                api.registerDevice(token, push.platform)
+                api.registerDevice(
+                    token,
+                    push.platform,
+                    reminders = reminderSettings.takeIf { push.remindersFromServer },
+                    timeZone = timeZone(),
+                )
                 registeredPushToken = token
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -464,6 +507,29 @@ class AppViewModel(
                 api.unregisterDevice(deviceToken, authToken)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+            }
+        }
+    }
+
+    /**
+     * Tokens expire a while after they are issued, so swapping it for a fresh one whenever the app is used, at most
+     * once a day, keeps a user who opens the app now and then logged in for good. A token that already expired or
+     * was revoked (password changed, other devices logged out) ends the session as any 401 does.
+     */
+    private fun refreshTokenIfDue() {
+        val last = lastTokenRefresh
+        val now = Clock.System.now()
+        if (user == null || (last != null && now - last < TOKEN_REFRESH_INTERVAL)) return
+        lastTokenRefresh = now
+        launchInSession {
+            try {
+                val session = api.refreshToken()
+                // Unless a password change or log-out of other devices got a newer token meanwhile.
+                if (api.token == session.token) sessions.save(session)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                // Offline, say: try again the next time the app comes to the front.
+                if (!expireSessionIfUnauthorized(e)) lastTokenRefresh = last
             }
         }
     }
@@ -506,5 +572,6 @@ class AppViewModel(
         const val MAX_RETRY_DELAY_MS = 30_000L
         const val MAX_FEED_ITEMS = 100
         const val RECENT_DRINKS = 30
+        val TOKEN_REFRESH_INTERVAL = 1.days
     }
 }

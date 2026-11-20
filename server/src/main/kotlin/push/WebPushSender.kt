@@ -81,6 +81,7 @@ class WebPushSender(config: WebPushConfig) : PushSender {
         val payload = buildJsonObject {
             put("title", message.title)
             put("body", message.body)
+            message.tag?.let { put("tag", it) }
         }.toString()
 
         val body = try {
@@ -97,7 +98,7 @@ class WebPushSender(config: WebPushConfig) : PushSender {
             try {
                 val request = HttpRequest.newBuilder(URI(subscription.endpoint))
                     .timeout(TIMEOUT)
-                    .apply { webPush.getHeaders(subscription.endpoint, TTL_SECONDS, null, null).forEach(::header) }
+                    .apply { webPush.getHeaders(subscription.endpoint, message.ttlSeconds, message.tag, null).forEach(::header) }
                     .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                     .build()
                 val response = http.send(request, HttpResponse.BodyHandlers.ofString())
@@ -117,8 +118,5 @@ class WebPushSender(config: WebPushConfig) : PushSender {
 
     private companion object {
         val TIMEOUT: Duration = Duration.ofSeconds(10)
-
-        /** A reminder that a friend drank is stale after a day, so push services may drop it after that. */
-        const val TTL_SECONDS = 24 * 60 * 60
     }
 }

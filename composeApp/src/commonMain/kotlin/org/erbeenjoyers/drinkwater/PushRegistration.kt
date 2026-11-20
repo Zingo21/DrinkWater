@@ -8,6 +8,12 @@ interface PushRegistration {
 
     /** This device's Firebase Cloud Messaging token, or null when push isn't set up or available. */
     suspend fun token(): String?
+
+    /**
+     * Whether the server pushes this device's drink reminders, for platforms that can't show a notification at a
+     * set time themselves (browsers). The reminder settings then go along with every registration.
+     */
+    val remindersFromServer: Boolean get() = false
 }
 
 /**

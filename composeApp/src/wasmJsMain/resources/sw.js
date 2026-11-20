@@ -7,10 +7,13 @@ self.addEventListener('push', function (event) {
     } catch (e) {
         data = { body: event.data ? event.data.text() : '' };
     }
-    event.waitUntil(self.registration.showNotification(data.title || 'DrinkWater', {
-        body: data.body || '',
-        icon: 'icon-192.png',
-    }));
+    var options = { body: data.body || '', icon: 'icon-192.png' };
+    // Reminders carry a tag, so a new one replaces the last instead of piling up, and still makes a sound.
+    if (data.tag) {
+        options.tag = data.tag;
+        options.renotify = true;
+    }
+    event.waitUntil(self.registration.showNotification(data.title || 'DrinkWater', options));
 });
 
 // Tapping a notification brings the app forward, or opens it if it isn't running.

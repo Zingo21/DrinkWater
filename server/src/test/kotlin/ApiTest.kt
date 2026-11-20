@@ -27,6 +27,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -45,6 +46,7 @@ import org.erbeenjoyers.drinkwater.api.LoginRequest
 import org.erbeenjoyers.drinkwater.api.NOTIFICATIONS_PROTOCOL
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.RegisterRequest
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.api.UserDto
 import org.erbeenjoyers.drinkwater.client.ApiError
 import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
@@ -62,6 +64,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class ApiTest {
     /** Records what would have been pushed. Tokens in [dead] are reported as no longer registered. */
@@ -146,6 +149,14 @@ class ApiTest {
 
         val me = client.get("/me") { bearerAuth(login.token) }.body<UserDto>()
         assertEquals(registered.user, me)
+    }
+
+    @Test
+    fun `the health check answers without a token`() = apiTest { client ->
+        val health = client.get("/health")
+        assertEquals(HttpStatusCode.OK, health.status)
+        assertEquals("OK", health.bodyAsText())
+        assertEquals("no-store", health.headers[HttpHeaders.CacheControl])
     }
 
     @Test
@@ -516,6 +527,58 @@ class ApiTest {
     }
 
     @Test
+    fun `a used session is refreshed, a revoked one is not`() = apiTest { client ->
+        val phone = DrinkWaterApi("http://localhost", client)
+        val user = phone.register("anna", "password123").user
+        assertEquals(user, phone.refreshToken().user)
+        assertEquals(user, phone.me())
+
+        val tablet = DrinkWaterApi("http://localhost", client)
+        tablet.login("anna", "password123")
+        phone.changePassword("password123", "new-password1")
+        assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.refreshToken() }.status)
+    }
+
+    @Test
+    fun `logging out other devices ends their sessions, connections and pushes`() {
+        val push = RecordingPush()
+        apiTest(push = push) { client ->
+            val phone = DrinkWaterApi("http://localhost", client)
+            val tablet = DrinkWaterApi("http://localhost", client)
+            val bertil = DrinkWaterApi("http://localhost", client)
+            val anna = phone.register("anna", "password123").user
+            tablet.login("anna", "password123")
+            bertil.register("bertil", "password123")
+            bertil.acceptFriendRequest(phone.sendFriendRequest("bertil").request.id)
+            phone.registerDevice("phone", DevicePlatform.ANDROID)
+            tablet.registerDevice("tablet", DevicePlatform.ANDROID)
+            push.drain()
+
+            coroutineScope {
+                val connected = CompletableDeferred<Unit>()
+                val tabletLive = async { tablet.notifications { connected.complete(Unit) }.toList() }
+                withTimeout(5.seconds) { connected.await() }
+
+                assertEquals(anna, phone.logOutOtherDevices(keepDevice = "phone").user)
+                // The server closed the tablet's connection, so its flow ends.
+                withTimeout(5.seconds) { tabletLive.await() }
+            }
+
+            assertEquals(anna, phone.me())
+            assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.me() }.status)
+            assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.refreshToken() }.status)
+
+            // Only the device that stayed logged in still gets pushes.
+            bertil.nudge(anna.id)
+            assertEquals(listOf("phone"), push.drain().map { it.first })
+
+            // The password is unchanged.
+            tablet.login("anna", "password123")
+            assertEquals(anna, tablet.me())
+        }
+    }
+
+    @Test
     fun `deleting the account removes the user and their friendships`() = apiTest { client ->
         val anna = DrinkWaterApi("http://localhost", client)
         val bertil = DrinkWaterApi("http://localhost", client)
@@ -593,6 +656,7 @@ class ApiTest {
                 assertEquals("no-cache", client.get("/composeApp.js").headers[HttpHeaders.CacheControl])
 
                 // The API is unaffected.
+                assertEquals("OK", client.get("/health").bodyAsText())
                 assertEquals(HttpStatusCode.NotFound, client.get("/missing.js").status)
                 assertEquals("Vatten", client.get("/drinks").body<List<DrinkDto>>().first().name)
                 assertEquals(HttpStatusCode.Unauthorized, client.get("/me").status)
@@ -634,6 +698,15 @@ class ApiTest {
                 """"keys":{"p256dh":"BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM",""" +
                 """"auth":"tBHItJI5svbpez7KI4CCXg"}}"""
             api.registerDevice(subscription, DevicePlatform.WEB)
+            api.registerDevice(subscription, DevicePlatform.WEB, ReminderSettings(enabled = true), "Europe/Stockholm")
+            listOf(
+                ReminderSettings(enabled = true, startHour = 20, endHour = 8) to "Europe/Stockholm",
+                ReminderSettings(enabled = true, intervalMinutes = 0) to "Europe/Stockholm",
+                ReminderSettings(enabled = true) to "Mars/Olympus_Mons",
+            ).forEach { (reminders, zone) ->
+                val invalid = assertFailsWith<ApiError> { api.registerDevice(subscription, DevicePlatform.WEB, reminders, zone) }
+                assertEquals(HttpStatusCode.BadRequest, invalid.status)
+            }
             api.unregisterDevice(subscription)
 
             val elsewhere = subscription.replace("web.push.apple.com", "example.com")

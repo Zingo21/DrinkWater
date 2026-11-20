@@ -40,6 +40,7 @@ import org.erbeenjoyers.drinkwater.api.DeleteAccountRequest
 import org.erbeenjoyers.drinkwater.api.DEFAULT_AMOUNT_ML
 import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.api.DrinkDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
@@ -50,6 +51,7 @@ import org.erbeenjoyers.drinkwater.api.FriendRequestCreateResponse
 import org.erbeenjoyers.drinkwater.api.FriendRequestsResponse
 import org.erbeenjoyers.drinkwater.api.GoalDto
 import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
+import org.erbeenjoyers.drinkwater.api.LogOutOthersRequest
 import org.erbeenjoyers.drinkwater.api.LoginRequest
 import org.erbeenjoyers.drinkwater.api.Notification
 import org.erbeenjoyers.drinkwater.api.RegisterRequest
@@ -103,12 +105,36 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
 
     /**
      * Changes the password and switches to the new token the server answers with; every other
-     * device is logged out. Fails with 403 if [currentPassword] is wrong.
+     * device is logged out, and [keepDevice] is this device's push token as for [logOutOtherDevices]. Fails with 403
+     * if [currentPassword] is wrong.
      */
-    suspend fun changePassword(currentPassword: String, newPassword: String): AuthResponse =
+    suspend fun changePassword(currentPassword: String, newPassword: String, keepDevice: String? = null): AuthResponse =
         client.put("/me/password") {
             authorize()
-            jsonBody(ChangePasswordRequest(currentPassword, newPassword))
+            jsonBody(ChangePasswordRequest(currentPassword, newPassword, keepDevice))
+        }.result<AuthResponse>()
+            .also { token = it.token }
+
+    /**
+     * Swaps the token for a fresh one, so a session lasts as long as it is used. Fails with 401 if the token has
+     * already expired or been revoked.
+     */
+    suspend fun refreshToken(): AuthResponse {
+        val sent = token
+        val response = client.post("/auth/refresh") { authorize() }.result<AuthResponse>()
+        // A password change answered meanwhile has the newer token; this one may already be revoked.
+        if (token == sent) token = response.token
+        return response
+    }
+
+    /**
+     * Logs out every other device and switches to the new token the server answers with. [keepDevice] is this
+     * device's push token, which keeps getting pushes; the others stop.
+     */
+    suspend fun logOutOtherDevices(keepDevice: String? = null): AuthResponse =
+        client.post("/me/logout-others") {
+            authorize()
+            jsonBody(LogOutOthersRequest(keepDevice))
         }.result<AuthResponse>()
             .also { token = it.token }
 
@@ -207,12 +233,18 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
 
     /**
      * Makes this device get the logged-in user's push notifications. [deviceToken] comes from Firebase Cloud
-     * Messaging, or for [DevicePlatform.WEB] is the browser's push subscription as JSON.
+     * Messaging, or for [DevicePlatform.WEB] is the browser's push subscription as JSON. With [reminders] the
+     * server also pushes the device's drink reminders, see [DeviceRegistration].
      */
-    suspend fun registerDevice(deviceToken: String, platform: DevicePlatform) {
+    suspend fun registerDevice(
+        deviceToken: String,
+        platform: DevicePlatform,
+        reminders: ReminderSettings? = null,
+        timeZone: String? = null,
+    ) {
         client.put("/me/devices") {
             authorize()
-            jsonBody(DeviceRegistration(deviceToken, platform))
+            jsonBody(DeviceRegistration(deviceToken, platform, reminders, timeZone))
         }.result<Unit>()
     }
 

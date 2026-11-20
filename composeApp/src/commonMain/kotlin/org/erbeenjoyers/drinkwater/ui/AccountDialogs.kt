@@ -106,6 +106,35 @@ fun DeleteAccountDialog(state: AccountState, onDelete: (password: String) -> Uni
 }
 
 @Composable
+fun LogOutOthersDialog(state: AccountState, onLogOut: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Log out other devices?") },
+        text = {
+            Column {
+                Text(
+                    "Every phone and browser you are logged in on, except this one, has to log in again and stops " +
+                        "getting your notifications. Your password stays the same.",
+                    style = MaterialTheme.typography.body2,
+                )
+                state.error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colors.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onLogOut, enabled = !state.busy) {
+                Text(if (state.busy) "Logging out…" else "Log out others")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !state.busy) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
 private fun PasswordField(
     label: String,
     value: String,

@@ -96,6 +96,10 @@ fun MainScreen(
                             }) { Text("Change password") }
                             DropdownMenuItem(onClick = {
                                 menuOpen = false
+                                viewModel.openAccountDialog(AccountDialog.LogOutOthers)
+                            }) { Text("Log out other devices") }
+                            DropdownMenuItem(onClick = {
+                                menuOpen = false
                                 viewModel.openAccountDialog(AccountDialog.DeleteAccount)
                             }) { Text("Delete account", color = MaterialTheme.colors.error) }
                             DropdownMenuItem(onClick = {
@@ -176,6 +180,11 @@ fun MainScreen(
             onChange = viewModel::changePassword,
             onDismiss = viewModel::closeAccountDialog,
         )
+        AccountDialog.LogOutOthers -> LogOutOthersDialog(
+            state = viewModel.account,
+            onLogOut = viewModel::logOutOtherDevices,
+            onDismiss = viewModel::closeAccountDialog,
+        )
         AccountDialog.DeleteAccount -> DeleteAccountDialog(
             state = viewModel.account,
             onDelete = viewModel::deleteAccount,
@@ -189,7 +198,15 @@ fun MainScreen(
             current = viewModel.reminderSettings,
             onSave = { settings ->
                 viewModel.changeReminderSettings(settings)
-                if (settings.enabled) onRemindersEnabled()
+                if (settings.enabled) {
+                    onRemindersEnabled()
+                    // Browsers: the reminders are pushes, so they need the permission the banner asks for. Asking
+                    // again once it is granted just answers yes, and this is still the click browsers require.
+                    notificationPrompt?.ask { granted ->
+                        if (granted) viewModel.enablePush() else viewModel.notificationsDenied()
+                    }
+                    promptState = NotificationPrompt.State.HIDDEN
+                }
                 editingReminders = false
             },
             onDismiss = { editingReminders = false },

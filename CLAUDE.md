@@ -23,8 +23,8 @@ table, environment variables and device setup.
 ./gradlew :server:run --args="reset-password <username>"   # maintenance command, see Commands.kt
 ```
 
-CI (`.github/workflows/build.yml`) runs exactly the server tests, app tests, debug + release APK builds and
-the web build.
+CI (`.github/workflows/build.yml`) runs exactly the server tests, app tests, debug + release APK builds, the web
+build and the server image build (published from `main`).
 Build release too when touching Android dependencies: `lintVitalRelease` only runs there (it once caught an old
 Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcode; its Kotlin code in
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
@@ -37,11 +37,16 @@ if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, of
 The app picks up `composeApp/google-services.json` only if
 the file exists.
 
-Deployment: `Dockerfile` + `compose.yaml` (server + Cloudflare Tunnel) on a Docker host, pushed with `deploy.ps1`
-(README, "Hosting the server"). The image only copies `server/build/install/server` and the web build, so those are
-built with Gradle before the image (`deploy.ps1` does it). The server and `shared`
-target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file, WebSocket sessions and
-rate limits in memory).
+Deployment (README, "Hosting the server"): CI builds the `Dockerfile` on every run and on `main` publishes it to
+`ghcr.io/<owner>/drinkwater` (`:latest` and `:sha-<commit>`, amd64 + arm64). The image only copies
+`server/build/install/server` and the web build, so Gradle builds those first, outside Docker, because configuring
+the project needs the Android SDK; with no `RUN` steps, arm64 needs no emulation. On the Docker host, `setup.sh`
+(run with `curl | bash`) installs Docker, writes `~/drinkwater/{compose.yaml,.env,update.sh}` and optionally a
+systemd timer that runs `update.sh` (`docker compose pull` + `up --wait`) every five minutes. `compose.yaml` runs the
+image plus a Cloudflare Tunnel; host-specific additions go in `compose.override.yaml`, which `setup.sh` never touches.
+The server and `shared` target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file,
+WebSocket sessions and rate limits in memory). The image's `HEALTHCHECK` curls `/health` (`routes/HealthRoutes.kt`,
+which also queries the database), which `up --wait` waits for.
 
 ## Architecture
 
@@ -63,13 +68,19 @@ summarized for push via `describe()`.
 - **Auth:** JWT (`auth/JwtService.kt`) with the user id as subject and a `ver` claim. `Users.tokenVersion` goes up
   on every password change and the `jwt { validate }` block in `Application.kt` rejects tokens whose version
   doesn't match, which also rejects tokens of deleted users. Routes inside `authenticate { }` read the user via
-  `call.userId`.
+  `call.userId`. Tokens last 30 days, but the app swaps its token through `/auth/refresh` at most once a day while it
+  is used (`refreshTokenIfDue`), so only an unused device is logged out. A password change and `/me/logout-others`
+  raise the version, forget the user's other devices' push registrations (all but `keepDevice`) and close their
+  WebSockets (`endOtherSessions` in `AuthRoutes.kt`).
 - **Status codes the app depends on:** the app treats any 401 as an expired session and logs the user out, so a
   wrong password while logged in (change password, delete account) is 403, not 401.
 - **Notifications:** `NotificationService` sends to a user's open `/notifications` WebSockets (several devices
   per user); if none got it, it pushes to their registered devices through `PushSender` in the background scope:
   `PlatformPushSender` sends `WEB` devices (token = the browser's subscription JSON) through `WebPushSender` and the
-  rest through `FcmPushSender`, each `NoPush` when unconfigured. Web subscriptions must point at a known push service
+  rest through `FcmPushSender`, each `NoPush` when unconfigured. `ReminderService` runs a loop in the application
+scope that each minute pushes the reminders of devices that registered reminder settings (the web app's),
+computing due times with the shared `nextReminder` (`shared/.../reminders/`), the same function Android schedules with;
+it stores nothing about sent reminders, it checks whether one fell between the previous check and now. Web subscriptions must point at a known push service
   (`WebPushSubscription.parse`), or the server could be made to post anywhere. Nudge rate limiting is in memory in `FriendService`.
 - **Time zones:** stats, streaks and the leaderboard are computed per request in the caller's IANA zone (`tz`
   parameter / `timeZone` field, default UTC), see `services/Stats.kt`.
@@ -94,19 +105,22 @@ register/login take ~0.25 s.
 `feed`, `account` state as Compose `mutableStateOf`); screens in `ui/` are stateless and get state + callbacks.
 Coroutines for the logged-in user run under `sessionJob` (`launchInSession`) so logging out cancels them all.
 Platform pieces are injected as interfaces from `MainActivity` / `MainViewController`: `PushRegistration`,
-`ReminderScheduler` (Android only so far), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
+`ReminderScheduler` (Android only; the web app's reminders come from the server), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
 iOS) used by `SessionStore`, `ReminderStore` and `ServerUrlStore`.
 
 **Web target.** `wasmJsMain/main.kt` uses localStorage for `Settings` and the page's own origin as the server.
 `WebPush.kt` is both its `PushRegistration` and its `NotificationPrompt` (the "Turn on" banner in `MainScreen`;
-browsers only ask for permission from a click), and `resources/sw.js` shows the pushes. No reminders there yet.
+browsers only ask for permission from a click), and `resources/sw.js` shows the pushes. Browsers can't schedule a
+notification, so the web app's reminders come from the server: `WebPush.remindersFromServer` makes `AppViewModel`
+send the device's `ReminderSettings` and time zone with every `registerDevice`.
 Playwright's Chromium can't subscribe to a real push service (no Google API keys, and none in incognito contexts). Time zones need the `@js-joda/timezone` npm package it references.
 `index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
 UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.
 
-**Server address.** Release builds start on `RELEASE_SERVER_URL` in `composeApp/.../ServerConfig.kt` (a
-placeholder `https://` URL until there is a real domain) and can switch to other `https://` servers from the login
-screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
+**Server address.** Release builds start on a URL set at build time so the domain stays out of the repository
+(`drinkwater.releaseServerUrl` Gradle property or `local.properties` on Android, where `checkReleaseServerUrl` fails
+release builds without an `https://` one and CI passes a placeholder; `versionCode` is the git commit count; `RELEASE_SERVER_URL` in `Local.xcconfig` on iOS)
+and can switch to other `https://` servers from the login screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
 (`drinkwater.serverUrl` Gradle property or `local.properties` on Android, `DEV_SERVER_URL` in
 `iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch to any server, HTTP
 included. Plain HTTP is only allowed in debug (`src/androidDebug/AndroidManifest.xml`, `NSAllowsLocalNetworking`).

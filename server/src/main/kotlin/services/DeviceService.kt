@@ -5,11 +5,14 @@ import database.DeviceTokens
 import io.ktor.http.HttpStatusCode
 import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
+import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.statements.UpdateBuilder
 import org.jetbrains.exposed.sql.update
 import push.Device
 import push.WebPushSubscription
@@ -17,8 +20,8 @@ import push.WebPushSubscription
 /** Keeps track of which devices should get a user's push notifications. */
 class DeviceService(private val db: Db) {
     /**
-     * Makes [registration]'s device receive [userId]'s pushes. A device belongs to one user at a time,
-     * so registering it again after someone else logged in on it moves it to them.
+     * Makes [registration]'s device receive [userId]'s pushes, and its reminders if it sent any. A device belongs
+     * to one user at a time, so registering it again after someone else logged in on it moves it to them.
      */
     suspend fun register(userId: Int, registration: DeviceRegistration) {
         val token = registration.token
@@ -28,18 +31,27 @@ class DeviceService(private val db: Db) {
         if (registration.platform == DevicePlatform.WEB && WebPushSubscription.parse(token) == null) {
             throw ApiException(HttpStatusCode.BadRequest, "Invalid web push subscription")
         }
+        val reminders = registration.reminders?.takeIf { it.enabled }
+        if (reminders != null && !reminders.isValid) {
+            throw ApiException(HttpStatusCode.BadRequest, "Invalid reminder settings")
+        }
+        val timeZone = registration.timeZone?.also { parseTimeZone(it) }
+
+        fun fill(row: UpdateBuilder<*>) {
+            row[DeviceTokens.userId] = userId
+            row[DeviceTokens.platform] = registration.platform
+            row[DeviceTokens.updatedAt] = System.currentTimeMillis()
+            row[DeviceTokens.reminderIntervalMinutes] = reminders?.intervalMinutes
+            row[DeviceTokens.reminderStartHour] = reminders?.startHour ?: ReminderSettings().startHour
+            row[DeviceTokens.reminderEndHour] = reminders?.endHour ?: ReminderSettings().endHour
+            row[DeviceTokens.timeZone] = timeZone
+        }
         db.query {
-            val updated = DeviceTokens.update({ DeviceTokens.token eq token }) {
-                it[DeviceTokens.userId] = userId
-                it[platform] = registration.platform
-                it[updatedAt] = System.currentTimeMillis()
-            }
+            val updated = DeviceTokens.update({ DeviceTokens.token eq token }) { fill(it) }
             if (updated == 0) {
                 DeviceTokens.insert {
-                    it[DeviceTokens.userId] = userId
                     it[DeviceTokens.token] = token
-                    it[platform] = registration.platform
-                    it[updatedAt] = System.currentTimeMillis()
+                    fill(it)
                 }
             }
         }
@@ -49,6 +61,15 @@ class DeviceService(private val db: Db) {
     suspend fun unregister(userId: Int, token: String) {
         db.query {
             DeviceTokens.deleteWhere { (DeviceTokens.token eq token) and (DeviceTokens.userId eq userId) }
+        }
+    }
+
+    /** Stops pushes to all of [userId]'s devices but [keep], whose sessions just ended. */
+    suspend fun forgetOthers(userId: Int, keep: String?) {
+        db.query {
+            DeviceTokens.deleteWhere {
+                if (keep == null) DeviceTokens.userId eq userId else (DeviceTokens.userId eq userId) and (DeviceTokens.token neq keep)
+            }
         }
     }
 

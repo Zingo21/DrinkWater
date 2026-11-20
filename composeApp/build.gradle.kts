@@ -93,6 +93,22 @@ fun localSetting(name: String): String? = providers.gradleProperty(name).orNull 
 
 val devServerUrl: String = localSetting("drinkwater.serverUrl") ?: "http://10.0.2.2:8080"
 
+// Where release builds connect, e.g. drinkwater.releaseServerUrl=https://drinkwater.example.com in local.properties.
+// Set at build time so the domain stays out of the repository; release builds refuse to build without it.
+val releaseServerUrl: String = localSetting("drinkwater.releaseServerUrl")?.trim()?.trimEnd('/').orEmpty()
+
+// The number of commits up to the one being built, which becomes versionCode: every commit raises it, so a newer
+// APK always installs over an older one without anyone remembering to bump it. Count on main, the branch releases
+// are built from. Null when git can't tell (not on the PATH, or not a checkout); a shallow clone, as in CI, counts 1.
+val commitCount: Int? = try {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toIntOrNull()
+} catch (e: Exception) {
+    null
+}
+
 // The release signing key, see "Signing release builds" in README.md. Without it release builds come out unsigned.
 val releaseKeystore: String? = localSetting("drinkwater.signing.storeFile")
 
@@ -104,13 +120,13 @@ android {
         applicationId = "org.erbeenjoyers.drinkwater"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
+        versionCode = commitCount ?: 1
         versionName = "1.0"
 
-        // The server debug builds start on; release builds always use RELEASE_SERVER_URL in
-        // ServerConfig.kt. 10.0.2.2 is the emulator's alias for the host machine. For a real device,
-        // set drinkwater.serverUrl=http://<your-ip>:8080 in local.properties or pass it with -P.
+        // The server debug builds start on. 10.0.2.2 is the emulator's alias for the host machine. For a real
+        // device, set drinkwater.serverUrl=http://<your-ip>:8080 in local.properties or pass it with -P.
         buildConfigField("String", "DEV_SERVER_URL", "\"$devServerUrl\"")
+        buildConfigField("String", "RELEASE_SERVER_URL", "\"$releaseServerUrl\"")
     }
     buildFeatures {
         buildConfig = true
@@ -146,3 +162,28 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 }
 
+// A release build that starts on no server is no use to the friends it is given to, so stop before building one.
+val checkReleaseServerUrl by tasks.registering {
+    val url = releaseServerUrl
+    doLast {
+        if (!Regex("^https://[a-z0-9.\\-\\[\\]:]+$", RegexOption.IGNORE_CASE).matches(url)) {
+            throw GradleException(
+                "Set drinkwater.releaseServerUrl to the server's https:// address, e.g. " +
+                    "drinkwater.releaseServerUrl=https://drinkwater.example.com in local.properties " +
+                    "(currently \"$url\"). See \"Server address\" in README.md.",
+            )
+        }
+    }
+}
+
+// Without git versionCode would be 1, and phones refuse to install that over a newer version.
+val checkVersionCode by tasks.registering {
+    val count = commitCount
+    doLast {
+        if (count == null) {
+            throw GradleException("versionCode comes from `git rev-list --count HEAD`, which failed. Build release from a git checkout with git on the PATH.")
+        }
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseServerUrl, checkVersionCode) }
