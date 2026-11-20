@@ -91,6 +91,13 @@ class UserService(private val db: Db) {
         setPassword(userId, newPassword)
     }
 
+    /** Makes every token issued until now stop working, without changing the password. */
+    suspend fun logOutEverywhere(userId: Int) {
+        db.query {
+            Users.update({ Users.id eq userId }) { it[tokenVersion] = tokenVersion + 1 }
+        }
+    }
+
     /**
      * Gives [username] a new password, for when they are locked out. Run by whoever runs the server,
      * see `reset-password` in Commands.kt. Returns false if there is no such user.

@@ -27,6 +27,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -522,6 +523,58 @@ class ApiTest {
         assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.login("anna", "password123") }.status)
         tablet.login("anna", "new-password1")
         assertEquals(user, tablet.me())
+    }
+
+    @Test
+    fun `a used session is refreshed, a revoked one is not`() = apiTest { client ->
+        val phone = DrinkWaterApi("http://localhost", client)
+        val user = phone.register("anna", "password123").user
+        assertEquals(user, phone.refreshToken().user)
+        assertEquals(user, phone.me())
+
+        val tablet = DrinkWaterApi("http://localhost", client)
+        tablet.login("anna", "password123")
+        phone.changePassword("password123", "new-password1")
+        assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.refreshToken() }.status)
+    }
+
+    @Test
+    fun `logging out other devices ends their sessions, connections and pushes`() {
+        val push = RecordingPush()
+        apiTest(push = push) { client ->
+            val phone = DrinkWaterApi("http://localhost", client)
+            val tablet = DrinkWaterApi("http://localhost", client)
+            val bertil = DrinkWaterApi("http://localhost", client)
+            val anna = phone.register("anna", "password123").user
+            tablet.login("anna", "password123")
+            bertil.register("bertil", "password123")
+            bertil.acceptFriendRequest(phone.sendFriendRequest("bertil").request.id)
+            phone.registerDevice("phone", DevicePlatform.ANDROID)
+            tablet.registerDevice("tablet", DevicePlatform.ANDROID)
+            push.drain()
+
+            coroutineScope {
+                val connected = CompletableDeferred<Unit>()
+                val tabletLive = async { tablet.notifications { connected.complete(Unit) }.toList() }
+                withTimeout(5_000) { connected.await() }
+
+                assertEquals(anna, phone.logOutOtherDevices(keepDevice = "phone").user)
+                // The server closed the tablet's connection, so its flow ends.
+                withTimeout(5_000) { tabletLive.await() }
+            }
+
+            assertEquals(anna, phone.me())
+            assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.me() }.status)
+            assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { tablet.refreshToken() }.status)
+
+            // Only the device that stayed logged in still gets pushes.
+            bertil.nudge(anna.id)
+            assertEquals(listOf("phone"), push.drain().map { it.first })
+
+            // The password is unchanged.
+            tablet.login("anna", "password123")
+            assertEquals(anna, tablet.me())
+        }
     }
 
     @Test

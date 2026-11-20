@@ -7,6 +7,7 @@ import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
 import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
@@ -60,6 +61,15 @@ class DeviceService(private val db: Db) {
     suspend fun unregister(userId: Int, token: String) {
         db.query {
             DeviceTokens.deleteWhere { (DeviceTokens.token eq token) and (DeviceTokens.userId eq userId) }
+        }
+    }
+
+    /** Stops pushes to all of [userId]'s devices but [keep], whose sessions just ended. */
+    suspend fun forgetOthers(userId: Int, keep: String?) {
+        db.query {
+            DeviceTokens.deleteWhere {
+                if (keep == null) DeviceTokens.userId eq userId else (DeviceTokens.userId eq userId) and (DeviceTokens.token neq keep)
+            }
         }
     }
 

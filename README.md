@@ -43,7 +43,9 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | POST | `/auth/register` | Create an account, returns a token |
 | POST | `/auth/login` | Log in, returns a token |
 | GET 🔒 | `/me` | The logged-in user |
-| PUT 🔒 | `/me/password` | Change password; returns a new token and logs out every other device |
+| POST 🔒 | `/auth/refresh` | A fresh token for the same session; the app swaps its token at most once a day while in use |
+| PUT 🔒 | `/me/password` | Change password; returns a new token and logs out every other device. Optional `keepDevice`: this device's push token, which keeps getting pushes |
+| POST 🔒 | `/me/logout-others` | Log out every other device without changing the password; returns a new token. `keepDevice` as above |
 | DELETE 🔒 | `/me` | Delete the account and everything in it (the password is asked for again) |
 | GET 🔒 | `/friends` | List friends |
 | DELETE 🔒 | `/friends/{friendId}` | Remove a friend |

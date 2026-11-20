@@ -143,7 +143,7 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
             }
         }
 
-        authRoutes(userService, jwtService, notificationService)
+        authRoutes(userService, jwtService, deviceService, notificationService)
         friendRoutes(friendService)
         drinkRoutes(drinkService, userService)
         notificationRoutes(notificationService)

@@ -96,6 +96,10 @@ fun MainScreen(
                             }) { Text("Change password") }
                             DropdownMenuItem(onClick = {
                                 menuOpen = false
+                                viewModel.openAccountDialog(AccountDialog.LogOutOthers)
+                            }) { Text("Log out other devices") }
+                            DropdownMenuItem(onClick = {
+                                menuOpen = false
                                 viewModel.openAccountDialog(AccountDialog.DeleteAccount)
                             }) { Text("Delete account", color = MaterialTheme.colors.error) }
                             DropdownMenuItem(onClick = {
@@ -174,6 +178,11 @@ fun MainScreen(
         AccountDialog.ChangePassword -> ChangePasswordDialog(
             state = viewModel.account,
             onChange = viewModel::changePassword,
+            onDismiss = viewModel::closeAccountDialog,
+        )
+        AccountDialog.LogOutOthers -> LogOutOthersDialog(
+            state = viewModel.account,
+            onLogOut = viewModel::logOutOtherDevices,
             onDismiss = viewModel::closeAccountDialog,
         )
         AccountDialog.DeleteAccount -> DeleteAccountDialog(

@@ -68,7 +68,10 @@ summarized for push via `describe()`.
 - **Auth:** JWT (`auth/JwtService.kt`) with the user id as subject and a `ver` claim. `Users.tokenVersion` goes up
   on every password change and the `jwt { validate }` block in `Application.kt` rejects tokens whose version
   doesn't match, which also rejects tokens of deleted users. Routes inside `authenticate { }` read the user via
-  `call.userId`.
+  `call.userId`. Tokens last 30 days, but the app swaps its token through `/auth/refresh` at most once a day while it
+  is used (`refreshTokenIfDue`), so only an unused device is logged out. A password change and `/me/logout-others`
+  raise the version, forget the user's other devices' push registrations (all but `keepDevice`) and close their
+  WebSockets (`endOtherSessions` in `AuthRoutes.kt`).
 - **Status codes the app depends on:** the app treats any 401 as an expired session and logs the user out, so a
   wrong password while logged in (change password, delete account) is 403, not 401.
 - **Notifications:** `NotificationService` sends to a user's open `/notifications` WebSockets (several devices
