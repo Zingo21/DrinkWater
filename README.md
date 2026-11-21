@@ -1,193 +1,56 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, the web and a server.
+# DrinkWater
 
-* `/composeApp` is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - `commonMain` is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    `iosMain` would be the right folder for such calls.
+An app for reminding yourself, and your friends, to drink water. You log what you drink, see how close you are to
+your daily goal, and your friends get a notification when you drink, reach your goal or nudge them to have a glass.
 
-* `/iosApp` contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform, 
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+- **Accounts** with a username and password, no e-mail needed.
+- **Friends**: send and accept friend requests, see a leaderboard of today's totals and streaks.
+- **Drinks**: log a glass in one tap, set a daily goal, see the last seven days and your streak.
+- **Nudges**: remind a friend to drink (at most once every five minutes per friend).
+- **Notifications**: live while the app is open, as push notifications while it is closed.
+- **Reminders** when you haven't logged a drink for a while, only during the hours you choose.
 
-* `/server` is for the Ktor server application.
+It runs as an **Android app** and as a **web app** that iPhones add to their Home Screen (no paid Apple developer
+account needed). Both talk to a small **server** you host yourself, for example on a VM at home.
 
-* `/shared` is for the code that will be shared between all targets in the project.
-  The most important subfolder is `commonMain`. If preferred, you can add code to the platform-specific folders here too.
-
-
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
-## Server API
-
-Run the server with `./gradlew :server:run` (port 8080). Configuration via environment variables:
-
-* `JWT_SECRET` – secret used to sign tokens. Required outside development mode.
-* `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
-* `FCM_SERVICE_ACCOUNT_FILE` – path to a Firebase service account key. Optional; enables push notifications.
-* `WEB_PUSH_SUBJECT` – a `mailto:` address or `https://` URL where push services can reach you. Optional; enables push
-  notifications to the web app. `WEB_PUSH_KEYS_FILE` is where the server keeps its web push keys, default `vapid.keys`.
-* `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
-* `TRUSTED_CLIENT_IP_HEADER` – header a hosting proxy puts the client's address in, e.g. `CF-Connecting-IP` behind a Cloudflare Tunnel. Set it behind
-  such a proxy, otherwise all users share one rate limit; never set it without one, or clients can choose their own address.
-* `ADMIN_TAILSCALE_USERS` – comma-separated Tailscale logins allowed into the [admin panel](#admin-panel). The panel only runs when this is set.
-* `ADMIN_PORT` and `ADMIN_HOST` – where the admin panel listens, default `127.0.0.1:8090`.
-
-Login, registration, password changes and account deletion share a limit of 10 requests a minute per client
-address and answer `429 Too Many Requests` beyond that.
-
-All request and response types live in `shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/api`,
-so the app and the server use the same models. Endpoints marked 🔒 need an `Authorization: Bearer <token>` header.
-
-| Method | Path | Description |
-|---|---|---|
-| POST | `/auth/register` | Create an account, returns a token |
-| POST | `/auth/login` | Log in, returns a token |
-| GET 🔒 | `/me` | The logged-in user |
-| POST 🔒 | `/auth/refresh` | A fresh token for the same session; the app swaps its token at most once a day while in use |
-| PUT 🔒 | `/me/password` | Change password; returns a new token and logs out every other device. Optional `keepDevice`: this device's push token, which keeps getting pushes |
-| POST 🔒 | `/me/logout-others` | Log out every other device without changing the password; returns a new token. `keepDevice` as above |
-| DELETE 🔒 | `/me` | Delete the account and everything in it (the password is asked for again) |
-| GET 🔒 | `/friends` | List friends |
-| DELETE 🔒 | `/friends/{friendId}` | Remove a friend |
-| GET 🔒 | `/friends/requests` | Incoming and outgoing friend requests |
-| POST 🔒 | `/friends/requests` | Send a friend request by username (accepts it if they already asked you) |
-| POST 🔒 | `/friends/requests/{id}/accept` | Accept an incoming request |
-| DELETE 🔒 | `/friends/requests/{id}` | Decline an incoming or cancel an outgoing request |
-| POST 🔒 | `/friends/{friendId}/nudge` | Remind a friend to drink (at most once every five minutes per friend) |
-| GET 🔒 | `/friends/leaderboard` | You and your friends with today's total, goal and streak, most drunk today first. `tz` as for `/me/stats` |
-| GET | `/drinks` | Available drinks |
-| POST 🔒 | `/drink` | Log a drink with an optional `amountMl` (default 250) and `timeZone`; friends get notified, also when it takes you past your daily goal |
-| GET 🔒 | `/me/drinks` | Your own logs, newest first. Optional `from`, `to` (epoch ms) and `limit` |
-| DELETE 🔒 | `/me/drinks/{id}` | Remove one of your logs |
-| GET 🔒 | `/me/stats` | Today's total, daily goal, streak and the last seven days. `tz` is an IANA time zone such as `Europe/Stockholm` (default UTC) |
-| PUT 🔒 | `/me/goal` | Set your daily goal in ml |
-| PUT 🔒 | `/me/devices` | Register this device for push: its FCM token, or a browser's push subscription (`WEB`). Optional `reminders` and `timeZone` make the server push its drink reminders |
-| GET | `/push/web-key` | The key browsers subscribe to web push with; 404 when web push is off |
-| DELETE 🔒 | `/me/devices/{token}` | Stop pushing to a device, e.g. on log-out |
-| WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
-| GET | `/health` | `OK` when the server is up and can reach its database, otherwise 503. For Docker and uptime monitors |
-
-Run the server tests with `./gradlew :server:test`.
-
-### When a friend is locked out
-
-There is no e-mail, so a forgotten password can't be reset from the app. Whoever runs the server
-gives the user a new password instead:
+## How it fits together
 
 ```
-./gradlew :server:run --args="reset-password <username>"
+ Android app ──┐
+               ├──HTTPS──▶ Cloudflare Tunnel or Tailscale Funnel ──▶ server (Docker on your VM)
+ web app ──────┘                                                     ├─ API, WebSocket, push, reminders
+ (served by the server)                                              ├─ the web app itself
+                                                                     └─ SQLite database
 ```
 
-or, with an installed server (`./gradlew :server:installDist`), `server/build/install/server/bin/server reset-password <username>`.
-Run it from the same directory, or with the same `DATABASE_URL`, as the server. It prints a random password,
-logs the user out on all devices and can run while the server is up. The user can then log in and pick
-their own password under the account menu (the icon at the top right).
+Everything is Kotlin. The repository has three Gradle modules:
 
-## Running the app against the server
+| Module | What it is |
+|---|---|
+| `server` | Ktor server: accounts (JWT), friends, drinks, stats, notifications over WebSocket, push to Android (Firebase) and the web (Web Push), reminders for the web app, an admin panel. SQLite through Exposed. |
+| `shared` | The API's request and response types and `DrinkWaterApi`, the one HTTP client for it, used by the apps and the server's tests. |
+| `composeApp` | The app's UI in Compose Multiplatform, built for Android, the web (Kotlin/Wasm) and iOS. |
 
-Start the server with `./gradlew :server:run`, then run the app. The shared client lives in
-`shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/client`.
+`iosApp` is the Xcode project for the native iOS app, which needs a paid Apple developer account to share, so iPhones
+normally use the web app. `setup.sh`, `compose.yaml` and the `Dockerfile` run the server on a Docker host.
 
-* **Android emulator** – works out of the box; the app talks to `http://10.0.2.2:8080`, the emulator's alias for your machine.
-* **Android device** – add `drinkwater.serverUrl=http://<your-computer-ip>:8080` to `local.properties`, or build with `-Pdrinkwater.serverUrl=...`.
-* **iOS simulator** – uses `http://localhost:8080`.
-* **iPhone** – create `iosApp/Configuration/Local.xcconfig` with `DEV_SERVER_URL = http:/$()/<your-computer-ip>:8080`
-  (`//` starts a comment in xcconfig files). The file is not checked in.
+## How it is built and shipped
 
-Any build can also switch server without rebuilding: tap **Server: …** at the bottom of the login screen.
+- **Every pull request and every change to `main`**: GitHub Actions (`.github/workflows/build.yml`) runs the server
+  and app tests and builds the Android APKs, the web app and the server's Docker image. On `main` the image is
+  published as `ghcr.io/zingo21/drinkwater:main`, for trying out what is on `main`.
+- **Every release** (a tag like `v1.2.3`): `.github/workflows/release.yml` builds the signed APK and attaches it to the
+  release, and publishes the image as `ghcr.io/zingo21/drinkwater:latest`. That is what the server runs, so your VM
+  only updates when you publish a release, by itself within five minutes. See [Releases](#releases).
 
-### Server address
+## Getting started
 
-Release builds start on a server address set when building, so friends you give the app to don't have to type
-anything and the domain stays out of the repository. They can still switch to another server, but only an
-`https://` one: only debug builds allow plain HTTP.
-
-* **Android** – [releases](#releases) take it from the `RELEASE_SERVER_URL` variable on GitHub. To build one yourself,
-  add `drinkwater.releaseServerUrl=https://<your hostname>` to `local.properties`, or build with
-  `-Pdrinkwater.releaseServerUrl=...`. Release builds stop with an error without it.
-* **iOS** – add `RELEASE_SERVER_URL = https:/$()/<your hostname>` to `iosApp/Configuration/Local.xcconfig`. Without
-  it a release build starts on no server and has to be pointed at one on the login screen.
-
-## Web app (iPhones without an Apple developer account)
-
-Without a paid Apple developer account the iOS app can't be shared with friends, so iPhones use the
-same Compose UI as a web app instead, built for the browser with Kotlin/Wasm. It needs Safari 18.2
-(iOS 18.2) or later; older browsers get a page asking them to update.
-
-```
-./gradlew :composeApp:wasmJsBrowserDistribution   # builds into composeApp/build/dist/wasmJs/productionExecutable
-./gradlew :server:run                             # serves that build at http://localhost:8080/
-```
-
-The server serves the web app itself, so the app always talks to the server it was loaded from. When
-running the server from this checkout it finds the build automatically; elsewhere, point `WEB_APP_DIR`
-at a copy of it. CI uploads the build as the `drinkwater-web` artifact.
-
-While working on the UI, `./gradlew :composeApp:wasmJsBrowserDevelopmentRun` serves a development build
-on http://localhost:8081/ and passes API calls on to the server on port 8080, so start that too.
-
-To install it on an iPhone, open the server's address in Safari, tap Share → **Add to Home Screen**. It
-then opens full screen like an app. This needs the server on `https://`.
-
-Browsers can't send an `Authorization` header when they open a WebSocket, so the web app sends its token
-for `/notifications` as the subprotocols `drinkwater, <token>` instead. The session is kept in the
-browser's localStorage. Push notifications work once the server has web push turned on, see
-[Push notifications](#push-notifications), and so do [reminders](#reminders).
-
-## Signing release builds
-
-Android only installs signed apps, and Play Store updates must be signed with the same key forever, so create one
-key, keep it outside the repository and back it up together with its passwords. `keytool` comes with the JDK
-(for example `C:\Program Files\Java\jdk-23\bin\keytool.exe` if it is not on your PATH):
-
-```
-keytool -genkeypair -v -keystore C:\path\to\drinkwater-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias drinkwater
-```
-
-Then add to `local.properties` (untracked):
-
-```
-drinkwater.signing.storeFile=C:/path/to/drinkwater-release.jks
-drinkwater.signing.storePassword=<keystore password>
-drinkwater.signing.keyAlias=drinkwater
-drinkwater.signing.keyPassword=<key password>
-```
-
-`./gradlew :composeApp:assembleRelease` then writes a signed APK to `composeApp/build/outputs/apk/release/`. The same
-keys also work as `-P` Gradle properties. Without them the release build still works but is unsigned, which is what CI
-builds. Normally GitHub builds the APK for you, see [Releases](#releases); building it yourself is for trying things out.
-
-The version comes from git tags: `v1.2.3` makes `versionName` 1.2.3 and `versionCode` 10203, which Android compares
-to decide whether an APK is an update, so minor and patch stay below 100. A local build takes the newest tag in your
-checkout, or `-Pdrinkwater.version=1.2.3`; a signed build without either stops with an error.
-
-## Releases
-
-A release is a version of both the app and the server. Publish one on GitHub and Actions does the rest
-(`.github/workflows/release.yml`): it runs the tests, builds the signed APK and attaches it to the release as
-`drinkwater-1.2.3.apk`, and publishes the server image as `ghcr.io/zingo21/drinkwater:1.2.3` and `:latest`. VMs with
-automatic updates install it within five minutes; the others on `update.sh`.
-
-To make one: on GitHub open Releases → Draft a new release, type a new tag such as `v1.2.3` (higher than the last),
-press Generate release notes and Publish. Then send your friends the link to the release; the APK installs over the
-previous one and keeps what is on the phone. `git tag v1.2.3 && git push origin v1.2.3` works too.
-
-### Once: the secrets
-
-The workflow needs the signing key and the server address, under the repository's Settings → Secrets and variables →
-Actions. Secrets are encrypted and never shown, also in a public repository, but anyone with write access to the
-repository could get at them through a workflow, so only give that to people you trust.
-
-- Secrets: `ANDROID_KEYSTORE_BASE64` (the keystore file from [Signing release builds](#signing-release-builds) as
-  base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`drinkwater` above) and `ANDROID_KEY_PASSWORD`. To get
-  the base64 on Windows, which copies it so you can paste it in:
-  ```
-  [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\drinkwater-release.jks")) | Set-Clipboard
-  ```
-- Variable (the Variables tab): `RELEASE_SERVER_URL`, for example `https://drinkwater.example.com`.
-
-Keep using the same key: phones refuse an update signed with another one. Keep the backup of it too; GitHub won't
-give the secret back.
+- **Run your own server** for you and your friends: [Hosting the server](#hosting-the-server), then
+  [Releases](#releases) for the Android app.
+- **Work on the code**: start the server with `./gradlew :server:run` and the web app with
+  `./gradlew :composeApp:wasmJsBrowserDevelopmentRun` (http://localhost:8081), or see
+  [Running the app against the server](#running-the-app-against-the-server) for Android and iOS.
+  `./gradlew :server:test` runs the server tests; `CLAUDE.md` explains the architecture.
 
 ## Hosting the server
 
@@ -323,6 +186,61 @@ so anyone could claim to be you.
   to it.
 - The image also runs on any other Docker host or service: mount a volume at `/data` and set `JWT_SECRET`.
 
+## Releases
+
+A release is a version of both the app and the server. Publish one on GitHub and Actions does the rest
+(`.github/workflows/release.yml`): it runs the tests, builds the signed APK and attaches it to the release as
+`drinkwater-1.2.3.apk`, and publishes the server image as `ghcr.io/zingo21/drinkwater:1.2.3` and `:latest`. VMs with
+automatic updates install it within five minutes; the others on `update.sh`.
+
+To make one: on GitHub open Releases → Draft a new release, type a new tag such as `v1.2.3` (higher than the last),
+press Generate release notes and Publish. Then send your friends the link to the release; the APK installs over the
+previous one and keeps what is on the phone. `git tag v1.2.3 && git push origin v1.2.3` works too.
+
+### Once: the secrets
+
+The workflow needs the signing key and the server address, under the repository's Settings → Secrets and variables →
+Actions. Secrets are encrypted and never shown, also in a public repository, but anyone with write access to the
+repository could get at them through a workflow, so only give that to people you trust.
+
+- Secrets: `ANDROID_KEYSTORE_BASE64` (the keystore file from [Signing release builds](#signing-release-builds) as
+  base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`drinkwater` above) and `ANDROID_KEY_PASSWORD`. To get
+  the base64 on Windows, which copies it so you can paste it in:
+  ```
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\drinkwater-release.jks")) | Set-Clipboard
+  ```
+- Variable (the Variables tab): `RELEASE_SERVER_URL`, for example `https://drinkwater.example.com`.
+
+Keep using the same key: phones refuse an update signed with another one. Keep the backup of it too; GitHub won't
+give the secret back.
+
+## Signing release builds
+
+Android only installs signed apps, and Play Store updates must be signed with the same key forever, so create one
+key, keep it outside the repository and back it up together with its passwords. `keytool` comes with the JDK
+(for example `C:\Program Files\Java\jdk-23\bin\keytool.exe` if it is not on your PATH):
+
+```
+keytool -genkeypair -v -keystore C:\path\to\drinkwater-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias drinkwater
+```
+
+Then add to `local.properties` (untracked):
+
+```
+drinkwater.signing.storeFile=C:/path/to/drinkwater-release.jks
+drinkwater.signing.storePassword=<keystore password>
+drinkwater.signing.keyAlias=drinkwater
+drinkwater.signing.keyPassword=<key password>
+```
+
+`./gradlew :composeApp:assembleRelease` then writes a signed APK to `composeApp/build/outputs/apk/release/`. The same
+keys also work as `-P` Gradle properties. Without them the release build still works but is unsigned, which is what CI
+builds. Normally GitHub builds the APK for you, see [Releases](#releases); building it yourself is for trying things out.
+
+The version comes from git tags: `v1.2.3` makes `versionName` 1.2.3 and `versionCode` 10203, which Android compares
+to decide whether an APK is an update, so minor and patch stay below 100. A local build takes the newest tag in your
+checkout, or `-Pdrinkwater.version=1.2.3`; a signed build without either stops with an error.
+
 ## Push notifications
 
 A user with the app open gets notifications over the WebSocket. Otherwise the server pushes them to their
@@ -370,3 +288,124 @@ phone and a computer can remind differently.
   (on an iPhone in the Home Screen app), and the server running. Reminders due while it was down are skipped.
 
 Both work out the times with the same function, `nextReminder` in `shared`. The native iOS app has no reminders.
+
+## Web app (iPhones without an Apple developer account)
+
+Without a paid Apple developer account the iOS app can't be shared with friends, so iPhones use the
+same Compose UI as a web app instead, built for the browser with Kotlin/Wasm. It needs Safari 18.2
+(iOS 18.2) or later; older browsers get a page asking them to update.
+
+```
+./gradlew :composeApp:wasmJsBrowserDistribution   # builds into composeApp/build/dist/wasmJs/productionExecutable
+./gradlew :server:run                             # serves that build at http://localhost:8080/
+```
+
+The server serves the web app itself, so the app always talks to the server it was loaded from. When
+running the server from this checkout it finds the build automatically; elsewhere, point `WEB_APP_DIR`
+at a copy of it. CI uploads the build as the `drinkwater-web` artifact.
+
+While working on the UI, `./gradlew :composeApp:wasmJsBrowserDevelopmentRun` serves a development build
+on http://localhost:8081/ and passes API calls on to the server on port 8080, so start that too.
+
+To install it on an iPhone, open the server's address in Safari, tap Share → **Add to Home Screen**. It
+then opens full screen like an app. This needs the server on `https://`.
+
+Browsers can't send an `Authorization` header when they open a WebSocket, so the web app sends its token
+for `/notifications` as the subprotocols `drinkwater, <token>` instead. The session is kept in the
+browser's localStorage. Push notifications work once the server has web push turned on, see
+[Push notifications](#push-notifications), and so do [reminders](#reminders).
+
+## Running the app against the server
+
+Start the server with `./gradlew :server:run`, then run the app. The shared client lives in
+`shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/client`.
+
+* **Android emulator** – works out of the box; the app talks to `http://10.0.2.2:8080`, the emulator's alias for your machine.
+* **Android device** – add `drinkwater.serverUrl=http://<your-computer-ip>:8080` to `local.properties`, or build with `-Pdrinkwater.serverUrl=...`.
+* **iOS simulator** – uses `http://localhost:8080`.
+* **iPhone** – create `iosApp/Configuration/Local.xcconfig` with `DEV_SERVER_URL = http:/$()/<your-computer-ip>:8080`
+  (`//` starts a comment in xcconfig files). The file is not checked in.
+
+Any build can also switch server without rebuilding: tap **Server: …** at the bottom of the login screen.
+
+### Server address
+
+Release builds start on a server address set when building, so friends you give the app to don't have to type
+anything and the domain stays out of the repository. They can still switch to another server, but only an
+`https://` one: only debug builds allow plain HTTP.
+
+* **Android** – [releases](#releases) take it from the `RELEASE_SERVER_URL` variable on GitHub. To build one yourself,
+  add `drinkwater.releaseServerUrl=https://<your hostname>` to `local.properties`, or build with
+  `-Pdrinkwater.releaseServerUrl=...`. Release builds stop with an error without it.
+* **iOS** – add `RELEASE_SERVER_URL = https:/$()/<your hostname>` to `iosApp/Configuration/Local.xcconfig`. Without
+  it a release build starts on no server and has to be pointed at one on the login screen.
+
+## Server API
+
+Run the server with `./gradlew :server:run` (port 8080). Configuration via environment variables:
+
+* `JWT_SECRET` – secret used to sign tokens. Required outside development mode.
+* `DATABASE_URL` – JDBC URL, defaults to `jdbc:sqlite:drinkwater.db`.
+* `FCM_SERVICE_ACCOUNT_FILE` – path to a Firebase service account key. Optional; enables push notifications.
+* `WEB_PUSH_SUBJECT` – a `mailto:` address or `https://` URL where push services can reach you. Optional; enables push
+  notifications to the web app. `WEB_PUSH_KEYS_FILE` is where the server keeps its web push keys, default `vapid.keys`.
+* `WEB_APP_DIR` – the built web app to serve at `/`. Optional; see [Web app](#web-app-iphones-without-an-apple-developer-account).
+* `TRUSTED_CLIENT_IP_HEADER` – header a hosting proxy puts the client's address in, e.g. `CF-Connecting-IP` behind a Cloudflare Tunnel. Set it behind
+  such a proxy, otherwise all users share one rate limit; never set it without one, or clients can choose their own address.
+* `ADMIN_TAILSCALE_USERS` – comma-separated Tailscale logins allowed into the [admin panel](#admin-panel). The panel only runs when this is set.
+* `ADMIN_PORT` and `ADMIN_HOST` – where the admin panel listens, default `127.0.0.1:8090`.
+
+Login, registration, password changes and account deletion share a limit of 10 requests a minute per client
+address and answer `429 Too Many Requests` beyond that.
+
+All request and response types live in `shared/src/commonMain/kotlin/org/erbeenjoyers/drinkwater/api`,
+so the app and the server use the same models. Endpoints marked 🔒 need an `Authorization: Bearer <token>` header.
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/auth/register` | Create an account, returns a token |
+| POST | `/auth/login` | Log in, returns a token |
+| GET 🔒 | `/me` | The logged-in user |
+| POST 🔒 | `/auth/refresh` | A fresh token for the same session; the app swaps its token at most once a day while in use |
+| PUT 🔒 | `/me/password` | Change password; returns a new token and logs out every other device. Optional `keepDevice`: this device's push token, which keeps getting pushes |
+| POST 🔒 | `/me/logout-others` | Log out every other device without changing the password; returns a new token. `keepDevice` as above |
+| DELETE 🔒 | `/me` | Delete the account and everything in it (the password is asked for again) |
+| GET 🔒 | `/friends` | List friends |
+| DELETE 🔒 | `/friends/{friendId}` | Remove a friend |
+| GET 🔒 | `/friends/requests` | Incoming and outgoing friend requests |
+| POST 🔒 | `/friends/requests` | Send a friend request by username (accepts it if they already asked you) |
+| POST 🔒 | `/friends/requests/{id}/accept` | Accept an incoming request |
+| DELETE 🔒 | `/friends/requests/{id}` | Decline an incoming or cancel an outgoing request |
+| POST 🔒 | `/friends/{friendId}/nudge` | Remind a friend to drink (at most once every five minutes per friend) |
+| GET 🔒 | `/friends/leaderboard` | You and your friends with today's total, goal and streak, most drunk today first. `tz` as for `/me/stats` |
+| GET | `/drinks` | Available drinks |
+| POST 🔒 | `/drink` | Log a drink with an optional `amountMl` (default 250) and `timeZone`; friends get notified, also when it takes you past your daily goal |
+| GET 🔒 | `/me/drinks` | Your own logs, newest first. Optional `from`, `to` (epoch ms) and `limit` |
+| DELETE 🔒 | `/me/drinks/{id}` | Remove one of your logs |
+| GET 🔒 | `/me/stats` | Today's total, daily goal, streak and the last seven days. `tz` is an IANA time zone such as `Europe/Stockholm` (default UTC) |
+| PUT 🔒 | `/me/goal` | Set your daily goal in ml |
+| PUT 🔒 | `/me/devices` | Register this device for push: its FCM token, or a browser's push subscription (`WEB`). Optional `reminders` and `timeZone` make the server push its drink reminders |
+| GET | `/push/web-key` | The key browsers subscribe to web push with; 404 when web push is off |
+| DELETE 🔒 | `/me/devices/{token}` | Stop pushing to a device, e.g. on log-out |
+| WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
+| GET | `/health` | `OK` when the server is up and can reach its database, otherwise 503. For Docker and uptime monitors |
+
+Run the server tests with `./gradlew :server:test`.
+
+### When a friend is locked out
+
+There is no e-mail, so a forgotten password can't be reset from the app. Whoever runs the server
+gives the user a new password instead:
+
+```
+./gradlew :server:run --args="reset-password <username>"
+```
+
+or, with an installed server (`./gradlew :server:installDist`), `server/build/install/server/bin/server reset-password <username>`.
+Run it from the same directory, or with the same `DATABASE_URL`, as the server. It prints a random password,
+logs the user out on all devices and can run while the server is up. The user can then log in and pick
+their own password under the account menu (the icon at the top right).
+
+## License
+
+MIT, see `LICENSE`.
