@@ -1,5 +1,6 @@
-# The server behind a Cloudflare Tunnel, see "Hosting the server" in README.md. setup.sh puts this file on the
-# Docker host next to a .env with JWT_SECRET, TUNNEL_TOKEN and the rest, and update.sh pulls the newest image.
+# The server, reached through a Cloudflare Tunnel (the tunnel service below) or Tailscale Funnel on the host, see
+# "Hosting the server" in README.md. setup.sh puts this file on the Docker host next to a .env with JWT_SECRET, the
+# way in and the rest, and update.sh pulls the newest image.
 # Local additions, like the FCM key, go in compose.override.yaml next to it: setup.sh replaces this file.
 # Docker keeps container logs forever by default; this caps them at 3 files of 10 MB per container.
 x-logging: &logging
@@ -10,35 +11,41 @@ x-logging: &logging
 
 services:
   server:
-    # Built and published by GitHub Actions from main (.github/workflows/build.yml). To go back to an earlier
-    # version, set DRINKWATER_IMAGE=ghcr.io/zingo21/drinkwater:sha-<commit> in .env and run update.sh.
+    # The newest release, published by GitHub Actions (.github/workflows/release.yml). To stay on or go back to a
+    # version, set DRINKWATER_IMAGE=ghcr.io/zingo21/drinkwater:1.2.0 in .env and run update.sh; :main follows main.
     image: ${DRINKWATER_IMAGE:-ghcr.io/zingo21/drinkwater:latest}
     restart: unless-stopped
     logging: *logging
     environment:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      # Cloudflare sets this to the caller's address. No port is published, so the tunnel is the only way in
-      # and nobody can send the header past it.
-      TRUSTED_CLIENT_IP_HEADER: CF-Connecting-IP
+      # The header the way in puts the caller's address in, for rate limiting: CF-Connecting-IP from Cloudflare,
+      # X-Forwarded-For from Tailscale Funnel, which both overwrite what the caller sent. Nothing else reaches the
+      # server: its port is only published on the host's own 127.0.0.1.
+      TRUSTED_CLIENT_IP_HEADER: ${TRUSTED_CLIENT_IP_HEADER:?set TRUSTED_CLIENT_IP_HEADER in .env, see setup.sh}
       # The admin panel, see "Admin panel" in README.md. It only runs when .env names who may use it.
       ADMIN_TAILSCALE_USERS: ${ADMIN_TAILSCALE_USERS:-}
       ADMIN_HOST: 0.0.0.0
       # Push to the web app, see "Push notifications" in README.md. Off unless .env sets it.
       WEB_PUSH_SUBJECT: ${WEB_PUSH_SUBJECT:-}
     ports:
-      # Published on the VM's own 127.0.0.1 only, for `tailscale serve`. Never route the tunnel here.
+      # The app, on the host's own 127.0.0.1 for `tailscale funnel` (and curl on the host).
+      - "127.0.0.1:8080:8080"
+      # The admin panel, on the host's own 127.0.0.1 for `tailscale serve`. Never route the tunnel or Funnel here.
       - "127.0.0.1:8090:8090"
     volumes:
       - data:/data
 
   tunnel:
+    # Only with Cloudflare: COMPOSE_PROFILES=cloudflare in .env turns it on.
+    profiles: [cloudflare]
     # Cloudflare only supports cloudflared releases from the last year, so this follows the newest one.
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     logging: *logging
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+      # Compose reads the whole file even with the tunnel off, so a missing token can't be an error here.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     depends_on:
       - server
 

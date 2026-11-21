@@ -4,13 +4,18 @@
 #   curl -fsSL https://raw.githubusercontent.com/Zingo21/DrinkWater/main/setup.sh | bash
 #
 # Run it as your own user, not root; it uses sudo where it must. It sets up ~/drinkwater with compose.yaml, a .env
-# and update.sh, then starts the server and the Cloudflare tunnel from the image GitHub builds. Running it again is
-# safe: it keeps .env and the database, and fetches the newest compose.yaml.
+# and update.sh, then starts the server from the image GitHub builds, reachable from the internet through either:
+#   - a Cloudflare Tunnel: your own domain, needs a Cloudflare account and a domain managed there;
+#   - Tailscale Funnel: an https://<machine>.<tailnet>.ts.net address, needs only a Tailscale account.
+# Running it again is safe: it keeps .env (and so the choice above) and the database, and fetches the newest
+# compose.yaml.
 #
 # It asks for what it needs. To run it without questions, set them in the environment instead:
-#   TUNNEL_TOKEN        the Cloudflare tunnel's token (required the first time)
+#   ACCESS              cloudflare or funnel (the first time)
+#   TUNNEL_TOKEN        the Cloudflare tunnel's token (the first time, with cloudflare)
+#   TS_AUTHKEY          a Tailscale auth key to log in with (optional, with funnel; otherwise it shows a login link)
 #   WEB_PUSH_SUBJECT    mailto: address for web push (optional, notifications are off without it)
-#   AUTO_UPDATE         yes or no: install the newest image every five minutes
+#   AUTO_UPDATE         yes or no: install new releases within five minutes
 set -euo pipefail
 
 REPO="${DRINKWATER_REPO:-Zingo21/DrinkWater}"
@@ -20,10 +25,13 @@ DIR="$HOME/drinkwater"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
+# Whether there is a terminal to ask on. /dev/tty exists without one too; only opening it tells.
+has_terminal() { (exec </dev/tty) 2>/dev/null; }
+
 # Questions come from the terminal even when the script itself arrives through a pipe.
 ask() {
     local prompt="$1" answer=""
-    if [ -r /dev/tty ]; then read -r -p "$prompt" answer </dev/tty || true; fi
+    if has_terminal; then read -r -p "$prompt" answer </dev/tty || true; fi
     printf '%s' "$answer"
 }
 
@@ -50,16 +58,39 @@ say "Fetching compose.yaml"
 curl -fsSL "https://raw.githubusercontent.com/$REPO/$BRANCH/compose.yaml" -o compose.yaml.new
 mv compose.yaml.new compose.yaml
 
+# For a question that needs an answer: without a terminal to ask on, the variable named $1 has to give it.
+need_answer() {
+    if ! has_terminal; then
+        echo "Set $1 to run without a terminal." >&2
+        exit 1
+    fi
+}
+
 if [ ! -f .env ]; then
     say "Creating .env"
-    token="${TUNNEL_TOKEN:-}"
-    while [ -z "$token" ]; do
-        token="$(ask "Cloudflare tunnel token (Zero Trust -> Networks -> Tunnels): ")"
-        if [ -z "$token" ] && [ ! -r /dev/tty ]; then
-            echo "Set TUNNEL_TOKEN to run without a terminal." >&2
-            exit 1
-        fi
+    access="${ACCESS:-}"
+    if [[ -n "$access" && "$access" != cloudflare && "$access" != funnel ]]; then
+        echo "ACCESS must be cloudflare or funnel." >&2
+        exit 1
+    fi
+    while [ -z "$access" ]; do
+        need_answer ACCESS
+        echo "How should your friends reach the server?"
+        echo "  1) Cloudflare Tunnel: your own domain (needs a Cloudflare account and a domain managed there)"
+        echo "  2) Tailscale Funnel: an address like https://drinkwater.tail1234.ts.net (needs only Tailscale)"
+        case "$(ask "Choose 1 or 2: ")" in
+            1) access=cloudflare ;;
+            2) access=funnel ;;
+        esac
     done
+    token=""
+    if [ "$access" = cloudflare ]; then
+        token="${TUNNEL_TOKEN:-}"
+        while [ -z "$token" ]; do
+            need_answer TUNNEL_TOKEN
+            token="$(ask "Cloudflare tunnel token (Zero Trust -> Networks -> Tunnels): ")"
+        done
+    fi
     subject="${WEB_PUSH_SUBJECT-$(ask "E-mail address for web push, or empty to leave notifications off: ")}"
     if [ -n "$subject" ] && [[ "$subject" != mailto:* ]]; then subject="mailto:$subject"; fi
 
@@ -67,12 +98,40 @@ if [ ! -f .env ]; then
     {
         echo "# Keep JWT_SECRET: changing it logs everyone out."
         echo "JWT_SECRET=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-        echo "TUNNEL_TOKEN=$token"
+        echo "DRINKWATER_ACCESS=$access"
+        if [ "$access" = cloudflare ]; then
+            echo "COMPOSE_PROFILES=cloudflare"
+            echo "TUNNEL_TOKEN=$token"
+            echo "TRUSTED_CLIENT_IP_HEADER=CF-Connecting-IP"
+        else
+            echo "TRUSTED_CLIENT_IP_HEADER=X-Forwarded-For"
+        fi
         if [ -n "$subject" ]; then echo "WEB_PUSH_SUBJECT=$subject"; fi
     } > .env
     umask 022
 else
     echo "Keeping the existing .env."
+    # A .env from before Funnel was an option is a Cloudflare one.
+    if ! grep -q '^DRINKWATER_ACCESS=' .env; then
+        printf 'DRINKWATER_ACCESS=cloudflare\nCOMPOSE_PROFILES=cloudflare\nTRUSTED_CLIENT_IP_HEADER=CF-Connecting-IP\n' >> .env
+    fi
+fi
+access="$(sed -n 's/^DRINKWATER_ACCESS=//p' .env | tail -1)"
+
+if [ "$access" = funnel ]; then
+    if ! command -v tailscale >/dev/null 2>&1; then
+        say "Installing Tailscale"
+        curl -fsSL https://tailscale.com/install.sh | sudo sh
+    fi
+    if ! sudo tailscale status >/dev/null 2>&1; then
+        say "Logging in to Tailscale"
+        if [ -n "${TS_AUTHKEY:-}" ]; then
+            sudo tailscale up --authkey "$TS_AUTHKEY"
+        else
+            echo "Open the link below and log in with your Tailscale account."
+            sudo tailscale up
+        fi
+    fi
 fi
 
 cat > update.sh <<'EOF'
@@ -88,7 +147,7 @@ docker image prune -f >/dev/null
 EOF
 chmod +x update.sh
 
-auto="${AUTO_UPDATE:-$(ask "Install updates automatically, within five minutes of a change on main? [y/N] ")}"
+auto="${AUTO_UPDATE:-$(ask "Install new releases automatically, within five minutes of publishing one? [y/N] ")}"
 if [[ "$auto" =~ ^([yY]|yes|YES|j|ja)$ ]]; then
     say "Turning on automatic updates"
     sudo tee /etc/systemd/system/drinkwater-update.service >/dev/null <<EOF
@@ -122,6 +181,15 @@ fi
 say "Starting the server"
 sudo ./update.sh
 
+address="https://<your hostname>"
+if [ "$access" = funnel ]; then
+    say "Opening it to the internet with Tailscale Funnel"
+    # The first time, Tailscale asks to allow Funnel and HTTPS certificates for the tailnet and shows a link for it.
+    sudo tailscale funnel --bg 8080
+    name="$(sudo tailscale status --json 2>/dev/null | sed -n 's/.*"DNSName": *"\([^"]*\)\.".*/\1/p' | head -1)"
+    if [ -n "$name" ]; then address="https://$name"; fi
+fi
+
 say "Done"
-echo "The server runs in $DIR. Check https://<your hostname>/health; it should say OK."
+echo "The server runs in $DIR. Your friends reach it at $address; $address/health should say OK."
 echo "To update by hand later: $DIR/update.sh"

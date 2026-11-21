@@ -102,7 +102,8 @@ Release builds start on a server address set when building, so friends you give 
 anything and the domain stays out of the repository. They can still switch to another server, but only an
 `https://` one: only debug builds allow plain HTTP.
 
-* **Android** – add `drinkwater.releaseServerUrl=https://<your hostname>` to `local.properties`, or build with
+* **Android** – [releases](#releases) take it from the `RELEASE_SERVER_URL` variable on GitHub. To build one yourself,
+  add `drinkwater.releaseServerUrl=https://<your hostname>` to `local.properties`, or build with
   `-Pdrinkwater.releaseServerUrl=...`. Release builds stop with an error without it.
 * **iOS** – add `RELEASE_SERVER_URL = https:/$()/<your hostname>` to `iosApp/Configuration/Local.xcconfig`. Without
   it a release build starts on no server and has to be pointed at one on the login screen.
@@ -153,27 +154,62 @@ drinkwater.signing.keyPassword=<key password>
 ```
 
 `./gradlew :composeApp:assembleRelease` then writes a signed APK to `composeApp/build/outputs/apk/release/`. The same
-keys also work as `-P` Gradle properties. Without them the release build still works but is unsigned, which is what CI builds.
+keys also work as `-P` Gradle properties. Without them the release build still works but is unsigned, which is what CI
+builds. Normally GitHub builds the APK for you, see [Releases](#releases); building it yourself is for trying things out.
 
-To update the app, build a new release with the same key and give it to everyone; it installs over the old one and
-keeps what is on the phone. The `versionCode` Android compares is the number of git commits, so it goes up by
-itself with every commit; build releases from `main` so it never goes down. `versionName`, the version people see,
-is set by hand in `composeApp/build.gradle.kts`.
+The version comes from git tags: `v1.2.3` makes `versionName` 1.2.3 and `versionCode` 10203, which Android compares
+to decide whether an APK is an update, so minor and patch stay below 100. A local build takes the newest tag in your
+checkout, or `-Pdrinkwater.version=1.2.3`; a signed build without either stops with an error.
+
+## Releases
+
+A release is a version of both the app and the server. Publish one on GitHub and Actions does the rest
+(`.github/workflows/release.yml`): it runs the tests, builds the signed APK and attaches it to the release as
+`drinkwater-1.2.3.apk`, and publishes the server image as `ghcr.io/zingo21/drinkwater:1.2.3` and `:latest`. VMs with
+automatic updates install it within five minutes; the others on `update.sh`.
+
+To make one: on GitHub open Releases → Draft a new release, type a new tag such as `v1.2.3` (higher than the last),
+press Generate release notes and Publish. Then send your friends the link to the release; the APK installs over the
+previous one and keeps what is on the phone. `git tag v1.2.3 && git push origin v1.2.3` works too.
+
+### Once: the secrets
+
+The workflow needs the signing key and the server address, under the repository's Settings → Secrets and variables →
+Actions. Secrets are encrypted and never shown, also in a public repository, but anyone with write access to the
+repository could get at them through a workflow, so only give that to people you trust.
+
+- Secrets: `ANDROID_KEYSTORE_BASE64` (the keystore file from [Signing release builds](#signing-release-builds) as
+  base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`drinkwater` above) and `ANDROID_KEY_PASSWORD`. To get
+  the base64 on Windows, which copies it so you can paste it in:
+  ```
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\drinkwater-release.jks")) | Set-Clipboard
+  ```
+- Variable (the Variables tab): `RELEASE_SERVER_URL`, for example `https://drinkwater.example.com`.
+
+Keep using the same key: phones refuse an update signed with another one. Keep the backup of it too; GitHub won't
+give the secret back.
 
 ## Hosting the server
 
-The server runs in Docker on any Linux machine, for example a VM on a Proxmox server at home. A
-[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) makes it reachable
-over HTTPS from anywhere without opening ports in the router, and also works without a public IP address.
-`compose.yaml` runs the server and the tunnel side by side, with the database in a Docker volume.
+The server runs in Docker on any Linux machine, for example a VM on a Proxmox server at home, with the database in a
+Docker volume. One of two services makes it reachable over HTTPS from anywhere, without opening ports in the router
+and also without a public IP address:
 
-GitHub Actions builds the server and the web app into a Docker image on every change to `main`, after the tests
+- A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/): your own
+  domain, such as `https://drinkwater.example.com`. Needs a free Cloudflare account and a domain whose DNS Cloudflare
+  manages. Cloudflare decrypts the traffic on its way through.
+- [Tailscale Funnel](https://tailscale.com/kb/1223/funnel): an address Tailscale gives the VM, such as
+  `https://drinkwater.tail1234.ts.net`. Needs only a free Tailscale account, which the [admin panel](#admin-panel)
+  uses too, and the traffic stays encrypted all the way to the VM.
+
+Choose before your friends start: the address is built into the Android app, and iPhones have to add the web app to
+the Home Screen again and turn notifications on again after it changes. The server itself never needs to know it.
+
+GitHub Actions builds the server and the web app into a Docker image for every [release](#releases), after the tests
 pass, and publishes it as `ghcr.io/zingo21/drinkwater`. The VM only needs Docker, `compose.yaml` and a `.env`; it
 never sees the source code, Java or Gradle.
 
-### Once: the tunnel
-
-You need a free Cloudflare account and a domain whose DNS is managed by Cloudflare.
+### Once: the Cloudflare tunnel (with Cloudflare only)
 
 1. In the Cloudflare dashboard go to Zero Trust → Networks → Tunnels and create a tunnel of type Cloudflared.
    Choose Docker as the environment and copy the token from the command it shows (the long string after `--token`).
@@ -188,22 +224,27 @@ You need a free Cloudflare account and a domain whose DNS is managed by Cloudfla
    ```
    curl -fsSL https://raw.githubusercontent.com/Zingo21/DrinkWater/main/setup.sh | bash
    ```
-   It installs Docker, asks for the tunnel token and an e-mail address for [web push](#web-app), creates
-   `~/drinkwater/.env` with a random JWT secret, asks whether to install updates automatically, and starts the
-   server and the tunnel. Running it again is safe: it keeps `.env` and the database.
+   It installs Docker, asks whether to use Cloudflare or Tailscale Funnel, then the tunnel token (Cloudflare) and an
+   e-mail address for [web push](#web-app), creates `~/drinkwater/.env` with a random JWT secret, asks whether to
+   install updates automatically, and starts the server. With Funnel it also installs Tailscale, shows a link to log
+   in with, and the first time a link to allow Funnel and HTTPS certificates in your tailnet; it ends by printing the
+   address. Running it again is safe: it keeps `.env`, and so the choice, and the database.
 3. Open `https://<your hostname>/health`; it should say `OK`. The web app is at `https://<your hostname>/`.
+
+With Funnel the address comes from the VM's name in Tailscale; rename the machine in the Tailscale admin console,
+say to `drinkwater`, before giving the address to anyone.
 
 Keep `JWT_SECRET` in `.env`: changing it later logs everyone out. If the VM can't pull the image (`denied` or
 `unauthorized`), the package is private: on GitHub open your profile → Packages → drinkwater → Package settings and
 change its visibility to public. The image holds no secrets; those are in `.env`.
 
-Finally set `drinkwater.releaseServerUrl=https://<your hostname>` in `local.properties` and build the Android app
-(see [Server address](#server-address)).
+Finally set the `RELEASE_SERVER_URL` variable on GitHub to `https://<your hostname>` and publish a
+[release](#releases), which also builds the Android app for that address.
 
 ### Updates
 
-Merge to `main` and wait for the build on GitHub to finish. With automatic updates on, the VM installs the new
-image within five minutes. Otherwise, on the VM:
+The VM runs the newest [release](#releases). With automatic updates on, it installs a new one within five minutes of
+publishing it. Otherwise, on the VM:
 
 ```
 ~/drinkwater/update.sh
@@ -213,8 +254,9 @@ It pulls the newest image, restarts the server and waits until it passes its hea
 doesn't; then `docker compose logs server` in `~/drinkwater` says why. The database and `.env` are kept, and new
 database columns are added on start. Running `setup.sh` again also fetches a newer `compose.yaml`.
 
-To go back to an earlier version, add `DRINKWATER_IMAGE=ghcr.io/zingo21/drinkwater:sha-<first 7 characters of the
-commit>` to `.env` and run `update.sh`; remove the line to follow `main` again. Automatic updates are a systemd
+To stay on or go back to a version, add `DRINKWATER_IMAGE=ghcr.io/zingo21/drinkwater:1.2.3` to `.env` and run
+`update.sh`; remove the line to follow the releases again. `:main` follows every change on `main` instead, and
+`:sha-<first 7 characters of a commit>` is any single commit on it. Automatic updates are a systemd
 timer: `sudo systemctl disable --now drinkwater-update.timer` turns them off, running `setup.sh` again and answering
 yes turns them on.
 
@@ -223,9 +265,9 @@ yes turns them on.
 The admin panel lists everyone with when they joined, their last drink, drinks in the last week and friends, and
 can reset a password or delete an account. Only you can reach it: it is a separate port that is published on the
 VM's own 127.0.0.1, and [Tailscale](https://tailscale.com) makes that port reachable from your own devices and
-nobody else's. The app itself stays behind the Cloudflare Tunnel as before.
+nobody else's. The app itself stays on the Cloudflare Tunnel or Funnel as before.
 
-1. Install Tailscale on the VM and log in with your Tailscale account:
+1. Install Tailscale on the VM and log in with your Tailscale account (already done with Funnel):
    ```
    curl -fsSL https://tailscale.com/install.sh | sh
    sudo tailscale up
@@ -252,10 +294,14 @@ so anyone could claim to be you.
 
 ### Notes
 
-- The server's port isn't published on the VM, so it is only reachable through the tunnel; that is also why it can
-  trust the `CF-Connecting-IP` header for rate limiting. To try it on your home network without the tunnel, add
-  `ports: ["8080:8080"]` to the `server` service in `compose.override.yaml` (below), but remove it again before
-  going live.
+- The server's port is only published on the VM's own 127.0.0.1, for Funnel, so from outside it is only reachable
+  through the tunnel or Funnel. That is why it can trust their header with the caller's address for rate limiting,
+  `TRUSTED_CLIENT_IP_HEADER` in `.env`: `CF-Connecting-IP` from Cloudflare, `X-Forwarded-For` from Funnel, which both
+  replace whatever the caller sent. To try it on your home network without either, add `ports: ["8080:8080"]` to the
+  `server` service in `compose.override.yaml` (below), but remove it again before going live.
+- Switching between Cloudflare and Funnel later: change `DRINKWATER_ACCESS`, `COMPOSE_PROFILES` (`cloudflare` or
+  nothing) and `TRUSTED_CLIENT_IP_HEADER` in `.env` to what `setup.sh` writes for the other one, and turn Funnel on or
+  off with `sudo tailscale funnel --bg 8080` / `sudo tailscale funnel reset`. Mind the new address, see above.
 - To hear when the server is down, point an uptime monitor (UptimeRobot's free plan, for example) at
   `https://<your hostname>/health`. It checks the whole way in, tunnel included. `docker ps` on the VM also shows
   the server as `healthy` or `unhealthy`, but Docker doesn't restart an unhealthy container on its own; it does
