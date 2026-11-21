@@ -46,7 +46,11 @@ which is what the Docker host runs. The image only copies
 the project needs the Android SDK; with no `RUN` steps, arm64 needs no emulation. On the Docker host, `setup.sh`
 (run with `curl | bash`) installs Docker, writes `~/drinkwater/{compose.yaml,.env,update.sh}` and optionally a
 systemd timer that runs `update.sh` (`docker compose pull` + `up --wait`) every five minutes. `compose.yaml` runs the
-image plus a Cloudflare Tunnel; host-specific additions go in `compose.override.yaml`, which `setup.sh` never touches.
+image, with the app on the host's 127.0.0.1:8080; the way in is either the Cloudflare Tunnel service (the `cloudflare`
+Compose profile, `COMPOSE_PROFILES` in `.env`) or Tailscale Funnel on the host (`tailscale funnel --bg 8080`), chosen
+in `setup.sh` and stored as `DRINKWATER_ACCESS`, and `TRUSTED_CLIENT_IP_HEADER` must match it (`CF-Connecting-IP` or
+`X-Forwarded-For`, which Funnel overwrites). Host-specific additions go in `compose.override.yaml`, which `setup.sh`
+never touches.
 The server and `shared` target Java 21 because the image runs a Java 21 JRE. It must stay one container (SQLite file,
 WebSocket sessions and rate limits in memory). The image's `HEALTHCHECK` curls `/health` (`routes/HealthRoutes.kt`,
 which also queries the database), which `up --wait` waits for.
