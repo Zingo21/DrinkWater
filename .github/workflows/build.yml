@@ -39,9 +39,9 @@ jobs:
       - name: Build web app
         run: ./gradlew :composeApp:wasmJsBrowserDistribution
 
-      # The server image: built on every run so a broken Dockerfile shows up in pull requests, published only from
-      # main, as ghcr.io/<owner>/drinkwater:latest and :sha-<commit> to go back to. The Docker host pulls it with
-      # update.sh (README, "Hosting the server").
+      # The server image: built on every run so a broken Dockerfile shows up in pull requests, and published from
+      # main as ghcr.io/<owner>/drinkwater:main and :sha-<commit>, to try out what is on main. Releases publish
+      # :latest, which the Docker host follows (release.yml, README "Releases").
       - name: Build server for the image
         run: ./gradlew :server:installDist
 
@@ -60,7 +60,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/drinkwater
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=main,enable={{is_default_branch}}
             type=sha,prefix=sha-
 
       - name: Build and publish server image

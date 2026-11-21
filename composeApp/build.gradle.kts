@@ -97,16 +97,25 @@ val devServerUrl: String = localSetting("drinkwater.serverUrl") ?: "http://10.0.
 // Set at build time so the domain stays out of the repository; release builds refuse to build without it.
 val releaseServerUrl: String = localSetting("drinkwater.releaseServerUrl")?.trim()?.trimEnd('/').orEmpty()
 
-// The number of commits up to the one being built, which becomes versionCode: every commit raises it, so a newer
-// APK always installs over an older one without anyone remembering to bump it. Count on main, the branch releases
-// are built from. Null when git can't tell (not on the PATH, or not a checkout); a shallow clone, as in CI, counts 1.
-val commitCount: Int? = try {
-    providers.exec {
-        commandLine("git", "rev-list", "--count", "HEAD")
-        isIgnoreExitValue = true
-    }.standardOutput.asText.get().trim().toIntOrNull()
-} catch (e: Exception) {
-    null
+// The app's version, e.g. 1.2.0: from drinkwater.version, which the release workflow sets from the release's tag
+// (.github/workflows/release.yml), or else from the newest v1.2.0-style tag in this checkout. Null when neither
+// gives one, e.g. in a shallow clone without tags.
+val appVersion: String? = localSetting("drinkwater.version")?.removePrefix("v")
+    ?: try {
+        providers.exec {
+            commandLine("git", "describe", "--tags", "--abbrev=0", "--match", "v[0-9]*")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim().removePrefix("v").ifEmpty { null }
+    } catch (e: Exception) {
+        null
+    }
+
+// Android only installs an update with a higher versionCode, so it grows with the version: 1.2.3 is 10203.
+// Minor and patch therefore stay below 100.
+val appVersionCode: Int? = appVersion?.let { version ->
+    val parts = Regex("""^(\d+)\.(\d{1,2})\.(\d{1,2})$""").matchEntire(version)?.destructured?.toList()
+        ?: throw GradleException("drinkwater.version must look like 1.2.3, with minor and patch below 100 (got \"$version\").")
+    parts[0].toInt() * 10_000 + parts[1].toInt() * 100 + parts[2].toInt()
 }
 
 // The release signing key, see "Signing release builds" in README.md. Without it release builds come out unsigned.
@@ -120,8 +129,8 @@ android {
         applicationId = "org.erbeenjoyers.drinkwater"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = commitCount ?: 1
-        versionName = "1.0"
+        versionCode = appVersionCode ?: 1
+        versionName = appVersion ?: "0.0.0-dev"
 
         // The server debug builds start on. 10.0.2.2 is the emulator's alias for the host machine. For a real
         // device, set drinkwater.serverUrl=http://<your-ip>:8080 in local.properties or pass it with -P.
@@ -176,14 +185,19 @@ val checkReleaseServerUrl by tasks.registering {
     }
 }
 
-// Without git versionCode would be 1, and phones refuse to install that over a newer version.
-val checkVersionCode by tasks.registering {
-    val count = commitCount
+// A signed APK is one meant for phones, and without a version it would be versionCode 1, which phones refuse to
+// install over anything newer. Unsigned release builds, as in CI's build job, don't need one.
+val checkReleaseVersion by tasks.registering {
+    val signed = releaseKeystore != null
+    val version = appVersion
     doLast {
-        if (count == null) {
-            throw GradleException("versionCode comes from `git rev-list --count HEAD`, which failed. Build release from a git checkout with git on the PATH.")
+        if (signed && version == null) {
+            throw GradleException(
+                "A signed release needs a version: set drinkwater.version=1.2.3, or build in a checkout with a " +
+                    "v1.2.3 tag. Releases are normally built by GitHub, see \"Releases\" in README.md.",
+            )
         }
     }
 }
 
-tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseServerUrl, checkVersionCode) }
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseServerUrl, checkReleaseVersion) }

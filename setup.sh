@@ -10,7 +10,7 @@
 # It asks for what it needs. To run it without questions, set them in the environment instead:
 #   TUNNEL_TOKEN        the Cloudflare tunnel's token (required the first time)
 #   WEB_PUSH_SUBJECT    mailto: address for web push (optional, notifications are off without it)
-#   AUTO_UPDATE         yes or no: install the newest image every five minutes
+#   AUTO_UPDATE         yes or no: install new releases within five minutes
 set -euo pipefail
 
 REPO="${DRINKWATER_REPO:-Zingo21/DrinkWater}"
@@ -88,7 +88,7 @@ docker image prune -f >/dev/null
 EOF
 chmod +x update.sh
 
-auto="${AUTO_UPDATE:-$(ask "Install updates automatically, within five minutes of a change on main? [y/N] ")}"
+auto="${AUTO_UPDATE:-$(ask "Install new releases automatically, within five minutes of publishing one? [y/N] ")}"
 if [[ "$auto" =~ ^([yY]|yes|YES|j|ja)$ ]]; then
     say "Turning on automatic updates"
     sudo tee /etc/systemd/system/drinkwater-update.service >/dev/null <<EOF

@@ -24,7 +24,9 @@ table, environment variables and device setup.
 ```
 
 CI (`.github/workflows/build.yml`) runs exactly the server tests, app tests, debug + release APK builds, the web
-build and the server image build (published from `main`).
+build and the server image build (published from `main` as `:main`). Releases are `.github/workflows/release.yml`:
+a `v1.2.3` tag (a release published on GitHub) runs the tests, builds the APK signed with the keystore from repository
+secrets, attaches it to the release and publishes the image as `:1.2.3`, `:1.2` and `:latest` (README, "Releases").
 Build release too when touching Android dependencies: `lintVitalRelease` only runs there (it once caught an old
 Fragment version pulled in by Firebase). iOS can only be built on macOS via Xcode; its Kotlin code in
 `iosMain` can't be compiled on Linux, so keep it small and say when it is unverified.
@@ -37,8 +39,9 @@ if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, of
 The app picks up `composeApp/google-services.json` only if
 the file exists.
 
-Deployment (README, "Hosting the server"): CI builds the `Dockerfile` on every run and on `main` publishes it to
-`ghcr.io/<owner>/drinkwater` (`:latest` and `:sha-<commit>`, amd64 + arm64). The image only copies
+Deployment (README, "Hosting the server"): CI builds the `Dockerfile` on every run and publishes it to
+`ghcr.io/<owner>/drinkwater` (amd64 + arm64): `:main` and `:sha-<commit>` from `main`, `:latest` only from releases,
+which is what the Docker host runs. The image only copies
 `server/build/install/server` and the web build, so Gradle builds those first, outside Docker, because configuring
 the project needs the Android SDK; with no `RUN` steps, arm64 needs no emulation. On the Docker host, `setup.sh`
 (run with `curl | bash`) installs Docker, writes `~/drinkwater/{compose.yaml,.env,update.sh}` and optionally a
@@ -119,7 +122,9 @@ UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordi
 
 **Server address.** Release builds start on a URL set at build time so the domain stays out of the repository
 (`drinkwater.releaseServerUrl` Gradle property or `local.properties` on Android, where `checkReleaseServerUrl` fails
-release builds without an `https://` one and CI passes a placeholder; `versionCode` is the git commit count; `RELEASE_SERVER_URL` in `Local.xcconfig` on iOS)
+release builds without an `https://` one and CI passes a placeholder; the version comes from `drinkwater.version` or
+the newest `v*` tag, `versionCode` = major·10000 + minor·100 + patch, and `checkReleaseVersion` fails signed builds
+without one; `RELEASE_SERVER_URL` in `Local.xcconfig` on iOS)
 and can switch to other `https://` servers from the login screen (`ServerConfig.httpsOnly`). Debug builds use a dev URL set at build time
 (`drinkwater.serverUrl` Gradle property or `local.properties` on Android, `DEV_SERVER_URL` in
 `iosApp/Configuration/Config.xcconfig` / untracked `Local.xcconfig` on iOS) and can switch to any server, HTTP
