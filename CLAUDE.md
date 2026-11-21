@@ -88,7 +88,7 @@ summarized for push via `describe()`.
 scope that each minute pushes the reminders of devices that registered reminder settings (the web app's),
 computing due times with the shared `nextReminder` (`shared/.../reminders/`), the same function Android schedules with;
 it stores nothing about sent reminders, it checks whether one fell between the previous check and now. Web subscriptions must point at a known push service
-  (`WebPushSubscription.parse`), or the server could be made to post anywhere. Nudge rate limiting is in memory in `FriendService`.
+  (`WebPushSubscription.parse`), or the server could be made to post anywhere. Nudge rate limiting, and the cooldown on friend request notifications (so a stranger can't send, cancel and resend to flood someone), is in memory in `FriendService` (`PairCooldown`).
 - **Time zones:** stats, streaks and the leaderboard are computed per request in the caller's IANA zone (`tz`
   parameter / `timeZone` field, default UTC), see `services/Stats.kt`.
 - **Web app:** `routes/WebAppRoutes.kt` serves the built web app at `/` (the API routes are more specific and win).
