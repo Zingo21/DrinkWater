@@ -450,6 +450,35 @@ class ApiTest {
     }
 
     @Test
+    fun `sending the same friend request again doesn't notify again`() {
+        val push = RecordingPush()
+        apiTest(push) { client ->
+            val anna = DrinkWaterApi("http://localhost", client)
+            val bertil = DrinkWaterApi("http://localhost", client)
+            val cecilia = DrinkWaterApi("http://localhost", client)
+            anna.register("anna", "password123")
+            bertil.register("bertil", "password123")
+            cecilia.register("cecilia", "password123")
+            bertil.registerDevice("phone", DevicePlatform.ANDROID)
+
+            val first = anna.sendFriendRequest("bertil").request
+            assertEquals(listOf("anna sent you a friend request"), push.drain().map { it.second.body })
+
+            // Cancelled by Anna, or declined by Bertil, and sent again: it's there, but quietly.
+            anna.deleteFriendRequest(first.id)
+            val second = anna.sendFriendRequest("bertil").request
+            bertil.deleteFriendRequest(second.id)
+            val third = anna.sendFriendRequest("bertil").request
+            assertTrue(push.drain().isEmpty())
+            assertEquals(listOf(third.id), bertil.friendRequests().incoming.map { it.id })
+
+            // Someone else's request still notifies.
+            cecilia.sendFriendRequest("bertil")
+            assertEquals(listOf("cecilia sent you a friend request"), push.drain().map { it.second.body })
+        }
+    }
+
+    @Test
     fun `users without the app open get a push instead`() {
         val push = RecordingPush(dead = setOf("old-phone"))
         apiTest(push) { client ->

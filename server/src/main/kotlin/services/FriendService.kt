@@ -25,17 +25,24 @@ import java.util.concurrent.ConcurrentHashMap
 
 const val NUDGE_COOLDOWN_MS = 5 * 60 * 1000L
 
+/**
+ * How often one user's friend requests to the same person notify them. Anyone can send anyone a request, and cancel
+ * it, so without this a stranger could send, cancel and send again to fill someone's phone with notifications.
+ */
+const val FRIEND_REQUEST_NOTIFY_COOLDOWN_MS = 60 * 60 * 1000L
+
 class FriendService(
     private val db: Db,
     private val users: UserService,
     private val notifications: NotificationService,
 ) {
-    /** When each (from, to) pair last nudged. */
-    private val lastNudges = ConcurrentHashMap<Pair<Int, Int>, Long>()
+    private val nudges = PairCooldown(NUDGE_COOLDOWN_MS)
+    private val requestNotifications = PairCooldown(FRIEND_REQUEST_NOTIFY_COOLDOWN_MS)
 
     /**
      * Sends a friend request to [username]. If that user has already sent a request
      * to [fromUserId], it is accepted instead, so both users end up as friends.
+     * The request is always made, but notifies them at most once per [FRIEND_REQUEST_NOTIFY_COOLDOWN_MS].
      */
     suspend fun sendRequest(fromUserId: Int, username: String): FriendRequestCreateResponse {
         val target = users.findByUsername(username)
@@ -70,7 +77,9 @@ class FriendService(
 
         when (response.result) {
             FriendRequestResult.SENT ->
-                notifications.send(target.id, Notification.FriendRequestReceived(response.request))
+                if (requestNotifications.tryStart(fromUserId to target.id)) {
+                    notifications.send(target.id, Notification.FriendRequestReceived(response.request))
+                }
             FriendRequestResult.ACCEPTED ->
                 notifications.send(target.id, Notification.FriendRequestAccepted(response.request.to))
         }
@@ -146,13 +155,7 @@ class FriendService(
         val user = users.findById(userId)
         if (!areFriends || user == null) throw ApiException(HttpStatusCode.NotFound, "Friend not found")
 
-        val now = System.currentTimeMillis()
-        var allowed = false
-        lastNudges.compute(userId to friendId) { _, last ->
-            allowed = last == null || now - last >= NUDGE_COOLDOWN_MS
-            if (allowed) now else last
-        }
-        if (!allowed) {
+        if (!nudges.tryStart(userId to friendId)) {
             throw ApiException(HttpStatusCode.TooManyRequests, "You nudged them just now. Give them a few minutes.")
         }
         notifications.send(friendId, Notification.Nudge(user))
@@ -194,5 +197,30 @@ class FriendService(
                 createdAt = it[Friendships.createdAt],
             )
         }
+    }
+}
+
+/**
+ * Lets something happen once per [periodMs] for each (from, to) pair of users. Kept in memory, so it starts over
+ * when the server restarts.
+ */
+private class PairCooldown(private val periodMs: Long) {
+    /** When each pair last went ahead. */
+    private val last = ConcurrentHashMap<Pair<Int, Int>, Long>()
+
+    /** True, and starts the cooldown, if [pair] is not cooling down. */
+    fun tryStart(pair: Pair<Int, Int>, now: Long = System.currentTimeMillis()): Boolean {
+        // Pairs that cooled down are only needed to say yes again, which a missing pair says too.
+        if (last.size > PRUNE_ABOVE) last.values.removeIf { now - it >= periodMs }
+        var allowed = false
+        last.compute(pair) { _, previous ->
+            allowed = previous == null || now - previous >= periodMs
+            if (allowed) now else previous
+        }
+        return allowed
+    }
+
+    private companion object {
+        const val PRUNE_ABOVE = 10_000
     }
 }
