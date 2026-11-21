@@ -23,6 +23,10 @@ jobs:
         uses: JetBrains/qodana-action@v2026.1
         with:
           pr-mode: false
+          # The cache restored a project model whose Kotlin/Native SDK was gone, so every run on main failed with
+          # "Please, specify sdk 'Kotlin SDK' for module ...iosArm64Main", and runs that got through analysed a half
+          # loaded project ("Kotlin sanity" problems). A cold start takes a few minutes longer but loads it properly.
+          use-caches: false
         env:
           QODANA_TOKEN: ${{ secrets.QODANA_TOKEN_250719456 }}
           QODANA_ENDPOINT: 'https://qodana.cloud'
