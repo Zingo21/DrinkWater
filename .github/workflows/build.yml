@@ -55,6 +55,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # What the image reports at /version and the apps show, like the :sha-<commit> tag.
+      - name: Name the build
+        id: version
+        run: |
+          short="${GITHUB_SHA::7}"
+          if [ "$GITHUB_REF" = refs/heads/main ]; then name=main; else name=dev; fi
+          echo "version=$name ($short)" >> "$GITHUB_OUTPUT"
+
       - id: meta
         uses: docker/metadata-action@v6
         with:
@@ -72,6 +80,8 @@ jobs:
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            DRINKWATER_VERSION=${{ steps.version.outputs.version }}
 
       - name: Upload test reports
         if: failure()

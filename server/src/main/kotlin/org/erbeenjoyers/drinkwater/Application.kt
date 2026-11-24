@@ -42,6 +42,7 @@ import routes.drinkRoutes
 import routes.friendRoutes
 import routes.healthRoutes
 import routes.notificationRoutes
+import routes.versionRoutes
 import routes.webApp
 import services.AdminService
 import services.ApiException
@@ -149,5 +150,6 @@ fun Application.module(config: AppConfig, push: PushSender = PushSender.fromConf
         notificationRoutes(notificationService)
         deviceRoutes(deviceService, push)
         healthRoutes(db)
+        versionRoutes(config.version)
     }
 }

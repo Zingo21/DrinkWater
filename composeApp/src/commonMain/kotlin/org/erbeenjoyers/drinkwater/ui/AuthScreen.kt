@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.Button
 import androidx.compose.material.CircularProgressIndicator
+import androidx.compose.material.ContentAlpha
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.OutlinedTextField
 import androidx.compose.material.Text
@@ -45,7 +46,10 @@ data class ServerChoice(
     val onChange: (String) -> Unit,
 )
 
-/** @param server shown below the form when the server can be changed. */
+/**
+ * @param server shown below the form when the server can be changed.
+ * @param version which versions run, shown at the bottom, see [org.erbeenjoyers.drinkwater.versionText].
+ */
 @Composable
 fun AuthScreen(
     state: AuthState,
@@ -53,6 +57,7 @@ fun AuthScreen(
     onRegister: (username: String, password: String) -> Unit,
     onInputChanged: () -> Unit,
     server: ServerChoice? = null,
+    version: String? = null,
 ) {
     var registering by rememberSaveable { mutableStateOf(false) }
     var username by rememberSaveable { mutableStateOf("") }
@@ -169,6 +174,16 @@ fun AuthScreen(
                         },
                     )
                 }
+            }
+
+            if (version != null) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    version,
+                    style = MaterialTheme.typography.caption,
+                    color = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.medium),
+                    textAlign = TextAlign.Center,
+                )
             }
         }
     }

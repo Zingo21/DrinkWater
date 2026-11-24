@@ -17,6 +17,7 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Scaffold
 import androidx.compose.material.ScaffoldState
 import androidx.compose.material.Text
+import androidx.compose.material.Divider
 import androidx.compose.material.DropdownMenu
 import androidx.compose.material.DropdownMenuItem
 import androidx.compose.material.TopAppBar
@@ -59,6 +60,7 @@ fun MainScreen(
     scaffoldState: ScaffoldState,
     onRemindersEnabled: () -> Unit,
     notificationPrompt: NotificationPrompt? = null,
+    version: String? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(Tab.Drink) }
     var editingReminders by remember { mutableStateOf(false) }
@@ -106,6 +108,13 @@ fun MainScreen(
                                 menuOpen = false
                                 viewModel.logout()
                             }) { Text("Log out") }
+                            if (version != null) {
+                                Divider()
+                                // Only information, for knowing which version runs, e.g. when reporting a problem.
+                                DropdownMenuItem(onClick = {}, enabled = false) {
+                                    Text(version, style = MaterialTheme.typography.caption)
+                                }
+                            }
                         }
                     }
                 },

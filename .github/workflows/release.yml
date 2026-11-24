@@ -107,6 +107,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            DRINKWATER_VERSION=${{ steps.version.outputs.version }}
 
       # A release published on GitHub already exists and gets the APK; a tag pushed with git gets a new release.
       - name: Attach the APK to the release
