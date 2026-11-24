@@ -25,8 +25,8 @@ kotlin {
         }
     }
     
+    // No iosX64 (simulators on Intel Macs): Compose Multiplatform 1.12 no longer publishes it.
     listOf(
-        iosX64(),
         iosArm64(),
         iosSimulatorArm64()
     ).forEach { iosTarget ->
@@ -201,3 +201,9 @@ val checkReleaseVersion by tasks.registering {
 }
 
 tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkReleaseServerUrl, checkReleaseVersion) }
+
+// Keeps the WebAssembly function names in the optimized web app, which binaryen otherwise strips: without them a
+// stack trace from someone's browser is only $func1234 numbers, and the CI build can't be matched to a local one.
+tasks.withType<org.jetbrains.kotlin.gradle.targets.wasm.binaryen.BinaryenExec>().configureEach {
+    binaryenArguments.add("--debuginfo")
+}
