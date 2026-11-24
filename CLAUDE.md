@@ -121,7 +121,11 @@ browsers only ask for permission from a click), and `resources/sw.js` shows the 
 notification, so the web app's reminders come from the server: `WebPush.remindersFromServer` makes `AppViewModel`
 send the device's `ReminderSettings` and time zone with every `registerDevice`.
 Playwright's Chromium can't subscribe to a real push service (no Google API keys, and none in incognito contexts). Time zones need the `@js-joda/timezone` npm package it references.
-`index.html` refuses to load the app without WasmGC (Safari < 18.2). Compose web draws on a canvas, so to check
+`index.html` refuses to load the app without WasmGC (Safari < 18.2). Safari 27.2 shows a blank white page without
+any error because of a WebKit bug with floating-point arguments in tail calls, which every Skia call from Skiko's
+`skiko.mjs` is; `composeApp/webpack.config.d/skikoNoTailCall.js` adds a loader (`composeApp/webpack/skikoNoTailCall.cjs`)
+that moves those calls into a `try`, and fails the build if a tail-call wrapper reaches the bundle. Remove both once
+Safari ships the fix. Compose web draws on a canvas, so to check
 UI changes drive it with Playwright (Chromium is preinstalled) by tapping coordinates and reading screenshots.
 
 **Server address.** Release builds start on a URL set at build time so the domain stays out of the repository
