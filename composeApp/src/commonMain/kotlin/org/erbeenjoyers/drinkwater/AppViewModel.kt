@@ -114,6 +114,10 @@ class AppViewModel(
     var account by mutableStateOf(AccountState())
         private set
 
+    /** The version the server runs, once it has said, see [versionText]. Null if it can't be reached or is too old. */
+    var serverVersion by mutableStateOf<String?>(null)
+        private set
+
     /** Whether this device can remind the user to drink at all, by itself or through the server. */
     val canRemind: Boolean get() = reminders != null || remindersFromServer
 
@@ -136,6 +140,15 @@ class AppViewModel(
     private var lastTokenRefresh: Instant? = null
 
     init {
+        // Not a session coroutine: the version shows on the login screen too.
+        viewModelScope.launch {
+            serverVersion = try {
+                api.serverInfo().version
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                null
+            }
+        }
         sessions.load()?.let { session ->
             api.token = session.token
             user = session.user

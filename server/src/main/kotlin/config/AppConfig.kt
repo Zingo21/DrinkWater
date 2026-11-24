@@ -22,9 +22,12 @@ data class AppConfig(
     val admin: AdminConfig? = null,
     /** Push to the web app, or null to leave it off. */
     val webPush: WebPushConfig? = null,
+    /** What `GET /version` reports; the image sets it when CI builds it, see the Dockerfile. */
+    val version: String = DEV_VERSION,
 ) {
     companion object {
         private const val DEV_JWT_SECRET = "dev-only-secret-change-me"
+        const val DEV_VERSION = "dev"
 
         /** Where `./gradlew :composeApp:wasmJsBrowserDistribution` puts the web app, seen from `./gradlew :server:run`. */
         private const val DEV_WEB_APP_DIR = "../composeApp/build/dist/wasmJs/productionExecutable"
@@ -53,9 +56,9 @@ data class AppConfig(
 
         /**
          * Reads `DATABASE_URL`, `JWT_SECRET`, `FCM_SERVICE_ACCOUNT_FILE`, `WEB_APP_DIR`, `TRUSTED_CLIENT_IP_HEADER`,
-         * `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT`, `ADMIN_HOST`, `WEB_PUSH_SUBJECT` and `WEB_PUSH_KEYS_FILE` from the
-         * environment. Outside development
-         * mode `JWT_SECRET` is required, so a real deployment never signs tokens with the dev secret.
+         * `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT`, `ADMIN_HOST`, `WEB_PUSH_SUBJECT`, `WEB_PUSH_KEYS_FILE` and
+         * `DRINKWATER_VERSION` from the environment. Outside development mode `JWT_SECRET` is required, so a real
+         * deployment never signs tokens with the dev secret.
          */
         fun fromEnvironment(developmentMode: Boolean): AppConfig {
             val secret = System.getenv("JWT_SECRET")
@@ -75,6 +78,7 @@ data class AppConfig(
                 webPush = System.getenv("WEB_PUSH_SUBJECT")?.takeIf { it.isNotBlank() }?.let { subject ->
                     WebPushConfig(subject, keysFile = System.getenv("WEB_PUSH_KEYS_FILE") ?: "vapid.keys")
                 },
+                version = System.getenv("DRINKWATER_VERSION")?.takeIf { it.isNotBlank() } ?: DEV_VERSION,
             )
         }
     }

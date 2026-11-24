@@ -35,7 +35,9 @@ Server config comes from env vars: `JWT_SECRET` (required outside dev mode), `DA
 `FCM_SERVICE_ACCOUNT_FILE` (Android push is off without it), `WEB_PUSH_SUBJECT` and `WEB_PUSH_KEYS_FILE` (web push,
 off without the subject), `TRUSTED_CLIENT_IP_HEADER` (rate limiting behind a proxy),
 `WEB_APP_DIR` (defaults to the web build in this checkout,
-if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, off unless the first is set).
+if any), `ADMIN_TAILSCALE_USERS`, `ADMIN_PORT` and `ADMIN_HOST` (admin panel, off unless the first is set) and
+`DRINKWATER_VERSION` (what `GET /version` reports and the apps show via `versionText`; the image gets it as a build
+argument from CI, the release version or `main (<short sha>)`, default `dev`).
 The app picks up `composeApp/google-services.json` only if
 the file exists.
 

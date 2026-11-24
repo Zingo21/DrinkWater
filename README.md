@@ -119,7 +119,8 @@ database columns are added on start. Running `setup.sh` again also fetches a new
 
 To stay on or go back to a version, add `DRINKWATER_IMAGE=ghcr.io/zingo21/drinkwater:1.2.3` to `.env` and run
 `update.sh`; remove the line to follow the releases again. `:main` follows every change on `main` instead, and
-`:sha-<first 7 characters of a commit>` is any single commit on it. Automatic updates are a systemd
+`:sha-<first 7 characters of a commit>` is any single commit on it. Which one runs shows at the bottom of the login
+screen and in the account menu: `Version 1.2.3`, or `Version main (6ce0990)` for an image of `main`. Automatic updates are a systemd
 timer: `sudo systemctl disable --now drinkwater-update.timer` turns them off, running `setup.sh` again and answering
 yes turns them on.
 
@@ -354,6 +355,8 @@ Run the server with `./gradlew :server:run` (port 8080). Configuration via envir
   such a proxy, otherwise all users share one rate limit; never set it without one, or clients can choose their own address.
 * `ADMIN_TAILSCALE_USERS` – comma-separated Tailscale logins allowed into the [admin panel](#admin-panel). The panel only runs when this is set.
 * `ADMIN_PORT` and `ADMIN_HOST` – where the admin panel listens, default `127.0.0.1:8090`.
+* `DRINKWATER_VERSION` – the version `/version` reports and the apps show. The image sets it: `1.2.3` for a release,
+  `main (6ce0990)` for a build of `main`. Default `dev`.
 
 Login, registration, password changes and account deletion share a limit of 10 requests a minute per client
 address and answer `429 Too Many Requests` beyond that.
@@ -389,6 +392,7 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | DELETE 🔒 | `/me/devices/{token}` | Stop pushing to a device, e.g. on log-out |
 | WS 🔒 | `/notifications` | Live notifications as JSON while the app is open |
 | GET | `/health` | `OK` when the server is up and can reach its database, otherwise 503. For Docker and uptime monitors |
+| GET | `/version` | The version the server runs, which the apps show under the login form and in the account menu |
 
 Run the server tests with `./gradlew :server:test`.
 

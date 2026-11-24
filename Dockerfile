@@ -14,6 +14,11 @@ ENV JAVA_OPTS="-Dio.ktor.development=false -XX:+ExitOnOutOfMemoryError" \
     WEB_APP_DIR="/app/web" \
     WEB_PUSH_KEYS_FILE="/data/vapid.keys"
 
+# The version the server reports at /version and the apps show: 1.2.3 for a release, main (6ce0990) for a build of
+# main. CI passes it (build.yml, release.yml); a build without it is "dev".
+ARG DRINKWATER_VERSION=dev
+ENV DRINKWATER_VERSION=$DRINKWATER_VERSION
+
 VOLUME /data
 EXPOSE 8080
 # Shows as healthy or unhealthy in `docker ps`, and `docker compose up --wait` in update.sh waits for it. Docker itself doesn't

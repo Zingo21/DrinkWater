@@ -30,6 +30,8 @@ import org.erbeenjoyers.drinkwater.ui.ServerChoice
  * @param reminders shows the user's own drink reminders, or null where they aren't supported.
  * @param onRemindersEnabled called when the user turns reminders on, e.g. to ask for permission to notify.
  * @param notificationPrompt asks the user to allow notifications where the platform needs that from inside the app.
+ * @param appVersion this app's version, shown next to the server's (see [versionText]); null in the web app, which is
+ *   the server's own.
  */
 @Composable
 fun App(
@@ -39,6 +41,7 @@ fun App(
     reminders: ReminderScheduler? = null,
     onRemindersEnabled: () -> Unit = {},
     notificationPrompt: NotificationPrompt? = null,
+    appVersion: String? = null,
 ) {
     MaterialTheme {
         val serverUrls = remember(settings) { ServerUrlStore(settings) }
@@ -48,6 +51,7 @@ fun App(
             AppViewModel(DrinkWaterApi(serverUrl), SessionStore(settings), ReminderStore(settings), push, reminders)
         }
         val scaffoldState = rememberScaffoldState()
+        val version = versionText(appVersion, viewModel.serverVersion)
 
         LaunchedEffect(viewModel) {
             viewModel.messages.collectLatest { scaffoldState.snackbarHostState.showSnackbar(it) }
@@ -79,9 +83,10 @@ fun App(
                     } else {
                         null
                     },
+                    version = version,
                 )
             } else {
-                MainScreen(user, viewModel, scaffoldState, onRemindersEnabled, notificationPrompt)
+                MainScreen(user, viewModel, scaffoldState, onRemindersEnabled, notificationPrompt, version)
             }
         }
     }

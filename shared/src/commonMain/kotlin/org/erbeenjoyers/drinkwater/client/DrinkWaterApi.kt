@@ -41,6 +41,7 @@ import org.erbeenjoyers.drinkwater.api.DEFAULT_AMOUNT_ML
 import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
 import org.erbeenjoyers.drinkwater.api.ReminderSettings
+import org.erbeenjoyers.drinkwater.api.ServerInfo
 import org.erbeenjoyers.drinkwater.api.DrinkDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogDto
 import org.erbeenjoyers.drinkwater.api.DrinkLogEntryDto
@@ -230,6 +231,9 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
         if (response.status == HttpStatusCode.NotFound) return null
         return response.result<WebPushKeyDto>().publicKey
     }
+
+    /** Which version the server runs. Needs no login; servers older than this endpoint answer 404, an [ApiError]. */
+    suspend fun serverInfo(): ServerInfo = client.get("/version").result()
 
     /**
      * Makes this device get the logged-in user's push notifications. [deviceToken] comes from Firebase Cloud

@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
                 push,
                 reminders,
                 onRemindersEnabled = ::askForNotificationPermission,
+                appVersion = BuildConfig.VERSION_NAME,
             )
         }
     }

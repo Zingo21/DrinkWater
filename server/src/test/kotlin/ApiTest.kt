@@ -85,6 +85,7 @@ class ApiTest {
     private fun apiTest(
         push: PushSender = NoPush,
         webAppDir: File? = null,
+        version: String = AppConfig.DEV_VERSION,
         block: suspend ApplicationTestBuilder.(HttpClient) -> Unit,
     ) {
         val dbFile = File.createTempFile("drinkwater-test", ".db")
@@ -95,6 +96,7 @@ class ApiTest {
                         "jdbc:sqlite:${dbFile.absolutePath}",
                         JwtConfig(secret = "test-secret"),
                         webAppDir = webAppDir,
+                        version = version,
                     )
                     module(config, push)
                 }
@@ -124,6 +126,14 @@ class ApiTest {
             contentType(ContentType.Application.Json)
             setBody(FriendRequestCreate(username))
         }
+
+    @Test
+    fun `the server says which version it runs, without a login`() {
+        apiTest { client -> assertEquals("dev", DrinkWaterApi("http://localhost", client).serverInfo().version) }
+        apiTest(version = "main (6ce0990)") { client ->
+            assertEquals("main (6ce0990)", DrinkWaterApi("http://localhost", client).serverInfo().version)
+        }
+    }
 
     @Test
     fun `register, login and fetch me`() = apiTest { client ->
