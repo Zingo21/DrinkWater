@@ -16,7 +16,7 @@ kotlin {
         }
     }
     
-    iosX64()
+    // No iosX64 (simulators on Intel Macs): Compose Multiplatform 1.12 no longer publishes it, see composeApp.
     iosArm64()
     iosSimulatorArm64()
     

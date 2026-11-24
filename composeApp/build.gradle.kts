@@ -25,8 +25,8 @@ kotlin {
         }
     }
     
+    // No iosX64 (simulators on Intel Macs): Compose Multiplatform 1.12 no longer publishes it.
     listOf(
-        iosX64(),
         iosArm64(),
         iosSimulatorArm64()
     ).forEach { iosTarget ->

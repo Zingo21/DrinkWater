@@ -153,7 +153,7 @@ private fun AddFriendRow(enabled: Boolean, onAddFriend: (username: String, onSen
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
-                autoCorrect = false,
+                autoCorrectEnabled = false,
                 imeAction = ImeAction.Send,
             ),
             keyboardActions = KeyboardActions(onSend = { submit() }),

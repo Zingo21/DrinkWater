@@ -90,7 +90,7 @@ fun AuthScreen(
                 enabled = !state.busy,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,
-                    autoCorrect = false,
+                    autoCorrectEnabled = false,
                     imeAction = ImeAction.Next,
                 ),
                 modifier = Modifier.fillMaxWidth(),
@@ -202,7 +202,7 @@ private fun ServerDialog(server: ServerChoice, onDismiss: () -> Unit, onSave: (S
                     isError = url == null,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.None,
-                        autoCorrect = false,
+                        autoCorrectEnabled = false,
                         keyboardType = KeyboardType.Uri,
                         imeAction = ImeAction.Done,
                     ),
