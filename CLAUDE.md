@@ -91,6 +91,11 @@ scope that each minute pushes the reminders of devices that registered reminder 
 computing due times with the shared `nextReminder` (`shared/.../reminders/`), the same function Android schedules with;
 it stores nothing about sent reminders, it checks whether one fell between the previous check and now. Web subscriptions must point at a known push service
   (`WebPushSubscription.parse`), or the server could be made to post anywhere. Nudge rate limiting, and the cooldown on friend request notifications (so a stranger can't send, cancel and resend to flood someone), is in memory in `FriendService` (`PairCooldown`).
+- **Invites:** `Users.inviteCode` (128 random bits, base64url, made on first `GET /me/invite`, replaced by
+  `/me/invite/reset`); `FriendService.acceptInvite` makes the two friends with no request, accepting one that is pending
+  either way, and notifies the inviter (`Notification.InviteAccepted`). The link is `https://<server>/#invite=<code>`
+  (`inviteLink`): the fragment never reaches the server, the web app's `main.kt` reads it, removes it from the address
+  bar and `AppViewModel` accepts it once someone is logged in. The invite dialog draws the QR code with qrose.
 - **Time zones:** stats, streaks and the leaderboard are computed per request in the caller's IANA zone (`tz`
   parameter / `timeZone` field, default UTC), see `services/Stats.kt`.
 - **Web app:** `routes/WebAppRoutes.kt` serves the built web app at `/` (the API routes are more specific and win).

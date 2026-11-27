@@ -38,6 +38,11 @@ sealed interface Notification {
     @Serializable
     @SerialName("friend_request_accepted")
     data class FriendRequestAccepted(val friend: UserDto) : Notification
+
+    /** [friend] opened your invite link and is now your friend. Older apps skip it, see `notifications()`. */
+    @Serializable
+    @SerialName("invite_accepted")
+    data class InviteAccepted(val friend: UserDto) : Notification
 }
 
 /** A one-line description of [this], used in the app's feed and as the text of push notifications. */
@@ -46,5 +51,6 @@ fun Notification.describe(): String = when (this) {
     is Notification.FriendReachedGoal -> "${friend.username} reached their daily goal of $goalMl ml"
     is Notification.FriendRequestReceived -> "${request.from.username} sent you a friend request"
     is Notification.FriendRequestAccepted -> "${friend.username} accepted your friend request"
+    is Notification.InviteAccepted -> "${friend.username} used your invite and is now your friend"
     is Notification.Nudge -> "${friend.username} nudged you: time for a drink of water"
 }

@@ -61,6 +61,8 @@ fun MainScreen(
     onRemindersEnabled: () -> Unit,
     notificationPrompt: NotificationPrompt? = null,
     version: String? = null,
+    inviteLink: (code: String) -> String = { it },
+    shareLink: ((String) -> Unit)? = null,
 ) {
     var tab by rememberSaveable { mutableStateOf(Tab.Drink) }
     var editingReminders by remember { mutableStateOf(false) }
@@ -175,6 +177,11 @@ fun MainScreen(
                         onRemoveFriend = viewModel::removeFriend,
                         onNudge = viewModel::nudge,
                         onRetry = viewModel::refreshFriends,
+                        invite = viewModel.invite,
+                        inviteLink = inviteLink,
+                        onLoadInvite = viewModel::loadInvite,
+                        onResetInvite = viewModel::resetInvite,
+                        shareLink = shareLink,
                     )
 
                     Tab.Feed -> FeedScreen(viewModel.feed)

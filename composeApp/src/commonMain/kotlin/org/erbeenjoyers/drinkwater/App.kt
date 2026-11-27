@@ -32,6 +32,8 @@ import org.erbeenjoyers.drinkwater.ui.ServerChoice
  * @param notificationPrompt asks the user to allow notifications where the platform needs that from inside the app.
  * @param appVersion this app's version, shown next to the server's (see [versionText]); null in the web app, which is
  *   the server's own.
+ * @param invite an invite code the app was opened with (see [inviteLink]), accepted once someone is logged in.
+ * @param shareLink hands a link to the platform's share sheet, or null where there is none (then the link is copied).
  */
 @Composable
 fun App(
@@ -42,13 +44,15 @@ fun App(
     onRemindersEnabled: () -> Unit = {},
     notificationPrompt: NotificationPrompt? = null,
     appVersion: String? = null,
+    invite: String? = null,
+    shareLink: ((String) -> Unit)? = null,
 ) {
     MaterialTheme {
         val serverUrls = remember(settings) { ServerUrlStore(settings) }
         var serverUrl by remember { mutableStateOf(if (server.editable) serverUrls.load(server.httpsOnly) ?: server.url else server.url) }
         // Keyed on the server so that picking another one starts over with a fresh client.
         val viewModel = viewModel(key = serverUrl) {
-            AppViewModel(DrinkWaterApi(serverUrl), SessionStore(settings), ReminderStore(settings), push, reminders)
+            AppViewModel(DrinkWaterApi(serverUrl), SessionStore(settings), ReminderStore(settings), push, reminders, invite)
         }
         val scaffoldState = rememberScaffoldState()
         val version = versionText(appVersion, viewModel.serverVersion)
@@ -86,7 +90,16 @@ fun App(
                     version = version,
                 )
             } else {
-                MainScreen(user, viewModel, scaffoldState, onRemindersEnabled, notificationPrompt, version)
+                MainScreen(
+                    user,
+                    viewModel,
+                    scaffoldState,
+                    onRemindersEnabled,
+                    notificationPrompt,
+                    version,
+                    inviteLink = { code -> inviteLink(serverUrl, code) },
+                    shareLink = shareLink,
+                )
             }
         }
     }

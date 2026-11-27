@@ -31,3 +31,13 @@ data class FriendRequestCreateResponse(val result: FriendRequestResult, val requ
  */
 @Serializable
 data class LeaderboardEntryDto(val user: UserDto, val todayMl: Int, val goalMl: Int, val streakDays: Int)
+
+/**
+ * The logged-in user's invite. Whoever opens the link with [code] (see `inviteLink` in the app) becomes their friend
+ * right away: sharing it is the consent a friend request otherwise asks for.
+ */
+@Serializable
+data class InviteDto(val code: String)
+
+@Serializable
+data class InviteAcceptRequest(val code: String)

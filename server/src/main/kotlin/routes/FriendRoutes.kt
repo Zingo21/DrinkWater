@@ -11,10 +11,22 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.route
 import org.erbeenjoyers.drinkwater.api.FriendRequestCreate
 import org.erbeenjoyers.drinkwater.api.FriendRequestResult
+import org.erbeenjoyers.drinkwater.api.InviteAcceptRequest
+import org.erbeenjoyers.drinkwater.api.InviteDto
 import services.FriendService
 
 fun Route.friendRoutes(friends: FriendService) {
     authenticate {
+        route("/me/invite") {
+            get {
+                call.respond(InviteDto(friends.invite(call.userId)))
+            }
+
+            post("/reset") {
+                call.respond(InviteDto(friends.resetInvite(call.userId)))
+            }
+        }
+
         route("/friends") {
             get {
                 call.respond(friends.friends(call.userId))
@@ -28,6 +40,11 @@ fun Route.friendRoutes(friends: FriendService) {
             post("/{friendId}/nudge") {
                 friends.nudge(call.userId, call.intParameter("friendId"))
                 call.respond(HttpStatusCode.NoContent)
+            }
+
+            post("/invite") {
+                val request = call.receive<InviteAcceptRequest>()
+                call.respond(friends.acceptInvite(call.userId, request.code))
             }
 
             route("/requests") {

@@ -17,6 +17,11 @@ object Users : Table() {
      * for and are rejected once it moves on, so a new password logs the account out everywhere else.
      */
     val tokenVersion = integer("token_version").default(0)
+    /**
+     * The secret in the user's invite link: whoever opens it becomes their friend without a request. Made when the
+     * user first asks for their link, replaced when they ask for a new one. Random, so it needs no unique index.
+     */
+    val inviteCode = varchar("invite_code", 32).nullable()
     override val primaryKey = PrimaryKey(id)
 }
 

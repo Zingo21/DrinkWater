@@ -69,6 +69,9 @@ data class FriendsState(
     val working: Boolean = false,
 )
 
+/** The user's own invite, see [AppViewModel.loadInvite]. [code] is null until it has loaded. */
+data class InviteState(val code: String? = null, val busy: Boolean = false, val error: String? = null)
+
 enum class AccountDialog { ChangePassword, LogOutOthers, DeleteAccount }
 
 data class AccountState(
@@ -95,6 +98,8 @@ class AppViewModel(
     private val push: PushRegistration? = null,
     /** Null on platforms that can't remind the user to drink. */
     private val reminders: ReminderScheduler? = null,
+    /** An invite code the app was opened with, accepted once someone is logged in, see [acceptInvite]. */
+    private var pendingInvite: String? = null,
 ) : ViewModel() {
     /** The logged-in user, or null while logged out. */
     var user by mutableStateOf<UserDto?>(null)
@@ -112,6 +117,9 @@ class AppViewModel(
     var reminderSettings by mutableStateOf(reminderStore.load())
         private set
     var account by mutableStateOf(AccountState())
+        private set
+
+    var invite by mutableStateOf(InviteState())
         private set
 
     /** The version the server runs, once it has said, see [versionText]. Null if it can't be reached or is too old. */
@@ -158,6 +166,13 @@ class AppViewModel(
             registerForPush()
             refreshTokenIfDue()
         }
+        if (pendingInvite != null) {
+            if (user != null) {
+                acceptPendingInvite()
+            } else {
+                auth = AuthState(notice = inviteNotice())
+            }
+        }
     }
 
     fun login(username: String, password: String) = authenticate { api.login(username.trim(), password) }
@@ -165,8 +180,13 @@ class AppViewModel(
     fun register(username: String, password: String) = authenticate { api.register(username.trim(), password) }
 
     fun clearAuthError() {
-        if (auth.error != null || auth.notice != null) auth = auth.copy(error = null, notice = null)
+        val notice = inviteNotice()
+        if (auth.error != null || auth.notice != notice) auth = auth.copy(error = null, notice = notice)
     }
+
+    /** Stays under the login form while an invite waits for someone to log in, see [acceptPendingInvite]. */
+    private fun inviteNotice(): String? =
+        if (pendingInvite != null) "Log in or create an account to become friends with whoever invited you." else null
 
     fun logout() {
         stopPushToThisDevice()
@@ -224,6 +244,7 @@ class AppViewModel(
         stats = StatsState()
         friends = FriendsState()
         feed = FeedState()
+        invite = InviteState()
         planReminder()
     }
 
@@ -328,6 +349,42 @@ class AppViewModel(
         }
     }
 
+    /** Fetches the user's invite code, for the invite dialog. */
+    fun loadInvite() = changeInvite { api.invite().code }
+
+    /** Replaces the invite code, so the links and QR codes shared until now stop working. */
+    fun resetInvite() = changeInvite { api.resetInvite().code }
+
+    private fun changeInvite(fetch: suspend () -> String) {
+        if (invite.busy) return
+        invite = invite.copy(busy = true, error = null)
+        launchInSession {
+            invite = try {
+                InviteState(code = fetch())
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (expireSessionIfUnauthorized(e)) return@launchInSession
+                invite.copy(busy = false, error = e.userMessage())
+            }
+        }
+    }
+
+    /** Becomes friends with whoever invited this device, now that someone is logged in. */
+    private fun acceptPendingInvite() {
+        val code = pendingInvite ?: return
+        pendingInvite = null
+        launchInSession {
+            try {
+                val friend = api.acceptInvite(code)
+                _messages.send("You and ${friend.username} are now friends")
+                refreshFriends()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (!expireSessionIfUnauthorized(e)) _messages.send(e.userMessage())
+            }
+        }
+    }
+
     /** [onSent] runs once the server has accepted the request, e.g. to clear the input field. */
     fun addFriend(username: String, onSent: () -> Unit) = changeFriends {
         val response = api.sendFriendRequest(username.trim())
@@ -419,10 +476,11 @@ class AppViewModel(
                 refreshStats()
                 refreshFriends()
                 registerForPush()
+                acceptPendingInvite()
                 AuthState()
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                AuthState(error = e.userMessage())
+                AuthState(error = e.userMessage(), notice = inviteNotice())
             }
         }
     }

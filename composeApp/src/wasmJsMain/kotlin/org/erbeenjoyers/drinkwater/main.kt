@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalWasmJsInterop::class)
+
 package org.erbeenjoyers.drinkwater
 
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -7,7 +9,6 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import org.erbeenjoyers.drinkwater.client.DrinkWaterApi
 
-@OptIn(ExperimentalWasmJsInterop::class)
 @JsModule("@js-joda/timezone")
 external object JsJodaTimeZoneModule
 
@@ -28,7 +29,23 @@ fun main() {
     // Its own client: the push key is fetched before anyone logs in, and needs no token.
     val keyClient = DrinkWaterApi(server.url)
     val push = WebPush(settings) { keyClient.webPushKey() }
+    val invite = inviteCodeFromFragment(window.location.hash)
+    // Out of the address bar once read, so a reload or a bookmark doesn't carry the invite around.
+    if (invite != null) window.history.replaceState(null, "", window.location.pathname + window.location.search)
     ComposeViewport(document.body!!) {
-        App(settings, server, push = push, notificationPrompt = push)
+        App(
+            settings,
+            server,
+            push = push,
+            notificationPrompt = push,
+            invite = invite,
+            shareLink = if (canShareLinks()) ::shareLink else null,
+        )
     }
 }
+
+/** The share sheet: Safari and Chrome on phones, Safari and Edge on desktops; Firefox and Chrome on Linux have none. */
+private fun canShareLinks(): Boolean = js("typeof navigator.share === 'function'")
+
+// Called straight from the click: browsers only open the share sheet in answer to one. Cancelling it rejects.
+private fun shareLink(url: String): Unit = js("navigator.share({ url: url }).catch(function () {})")

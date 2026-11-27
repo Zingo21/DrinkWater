@@ -1,6 +1,7 @@
 package org.erbeenjoyers.drinkwater
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -31,8 +32,15 @@ class MainActivity : ComponentActivity() {
                 reminders,
                 onRemindersEnabled = ::askForNotificationPermission,
                 appVersion = BuildConfig.VERSION_NAME,
+                shareLink = ::shareLink,
             )
         }
+    }
+
+    /** Android's share sheet, for invite links: messaging apps, e-mail, copying. */
+    private fun shareLink(link: String) {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link)
+        startActivity(Intent.createChooser(send, null))
     }
 
     /** From Android 13 notifications stay hidden until the user allows them. The system stops asking after two refusals. */

@@ -71,6 +71,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtime.compose)
             implementation(libs.kotlinx.datetime)
             implementation(libs.multiplatform.settings)
+            implementation(libs.qrose)
             implementation(projects.shared)
         }
         wasmJsMain.dependencies {

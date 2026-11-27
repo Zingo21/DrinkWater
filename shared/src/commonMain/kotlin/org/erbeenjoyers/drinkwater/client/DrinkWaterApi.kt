@@ -40,6 +40,8 @@ import org.erbeenjoyers.drinkwater.api.DeleteAccountRequest
 import org.erbeenjoyers.drinkwater.api.DEFAULT_AMOUNT_ML
 import org.erbeenjoyers.drinkwater.api.DevicePlatform
 import org.erbeenjoyers.drinkwater.api.DeviceRegistration
+import org.erbeenjoyers.drinkwater.api.InviteAcceptRequest
+import org.erbeenjoyers.drinkwater.api.InviteDto
 import org.erbeenjoyers.drinkwater.api.ReminderSettings
 import org.erbeenjoyers.drinkwater.api.ServerInfo
 import org.erbeenjoyers.drinkwater.api.DrinkDto
@@ -219,6 +221,19 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
     /** Accepts an incoming request and returns the new friend. */
     suspend fun acceptFriendRequest(requestId: Int): UserDto =
         client.post("/friends/requests/$requestId/accept") { authorize() }.result()
+
+    /** The logged-in user's invite, made on first use. */
+    suspend fun invite(): InviteDto = client.get("/me/invite") { authorize() }.result()
+
+    /** Replaces the invite, so links shared until now stop working. */
+    suspend fun resetInvite(): InviteDto = client.post("/me/invite/reset") { authorize() }.result()
+
+    /** Becomes friends with whoever's invite [code] is, without a request; returns them. */
+    suspend fun acceptInvite(code: String): UserDto =
+        client.post("/friends/invite") {
+            authorize()
+            jsonBody(InviteAcceptRequest(code))
+        }.result()
 
     /** Declines an incoming request or cancels an outgoing one. */
     suspend fun deleteFriendRequest(requestId: Int) {
