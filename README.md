@@ -10,6 +10,7 @@ your daily goal, and your friends get a notification when you drink, reach your 
 - **Nudges**: remind a friend to drink (at most once every five minutes per friend).
 - **Notifications**: live while the app is open, as push notifications while it is closed.
 - **Reminders** when you haven't logged a drink for a while, only during the hours you choose.
+- **Dark mode**: follows the phone or computer, or light or dark as picked under Appearance in the account menu.
 
 It runs as an **Android app** and as a **web app** that iPhones add to their Home Screen (no paid Apple developer
 account needed). Both talk to a small **server** you host yourself, for example on a VM at home.

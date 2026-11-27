@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.LifecycleStartEffect
 import org.erbeenjoyers.drinkwater.AccountDialog
 import org.erbeenjoyers.drinkwater.AppViewModel
+import org.erbeenjoyers.drinkwater.ThemeChoice
 import org.erbeenjoyers.drinkwater.api.UserDto
 
 private enum class Tab(val label: String, val icon: ImageVector) {
@@ -63,7 +64,13 @@ fun MainScreen(
     version: String? = null,
     inviteLink: (code: String) -> String = { it },
     shareLink: ((String) -> Unit)? = null,
+    theme: ThemeChoice = ThemeChoice.System,
+    onThemeChange: (ThemeChoice) -> Unit = {},
 ) {
+    var choosingTheme by remember { mutableStateOf(false) }
+    if (choosingTheme) {
+        AppearanceDialog(theme, onChoose = onThemeChange, onDismiss = { choosingTheme = false })
+    }
     var tab by rememberSaveable { mutableStateOf(Tab.Drink) }
     var editingReminders by remember { mutableStateOf(false) }
     var promptState by remember { mutableStateOf(NotificationPrompt.State.HIDDEN) }
@@ -106,6 +113,10 @@ fun MainScreen(
                                 menuOpen = false
                                 viewModel.openAccountDialog(AccountDialog.DeleteAccount)
                             }) { Text("Delete account", color = MaterialTheme.colors.error) }
+                            DropdownMenuItem(onClick = {
+                                menuOpen = false
+                                choosingTheme = true
+                            }) { Text("Appearance") }
                             DropdownMenuItem(onClick = {
                                 menuOpen = false
                                 viewModel.logout()

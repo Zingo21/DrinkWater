@@ -1,12 +1,12 @@
 package org.erbeenjoyers.drinkwater
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Surface
 import androidx.compose.material.rememberScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,7 +47,9 @@ fun App(
     invite: String? = null,
     shareLink: ((String) -> Unit)? = null,
 ) {
-    MaterialTheme {
+    val themes = remember(settings) { ThemeStore(settings) }
+    var theme by remember { mutableStateOf(themes.load()) }
+    DrinkWaterTheme(theme) {
         val serverUrls = remember(settings) { ServerUrlStore(settings) }
         var serverUrl by remember { mutableStateOf(if (server.editable) serverUrls.load(server.httpsOnly) ?: server.url else server.url) }
         // Keyed on the server so that picking another one starts over with a fresh client.
@@ -61,45 +63,49 @@ fun App(
             viewModel.messages.collectLatest { scaffoldState.snackbarHostState.showSnackbar(it) }
         }
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colors.background)
-                .windowInsetsPadding(WindowInsets.safeDrawing),
-        ) {
-            val user = viewModel.user
-            if (user == null) {
-                AuthScreen(
-                    state = viewModel.auth,
-                    onLogin = viewModel::login,
-                    onRegister = viewModel::register,
-                    onInputChanged = viewModel::clearAuthError,
-                    server = if (server.editable) {
-                        ServerChoice(
-                            current = serverUrl,
-                            default = server.url,
-                            httpsOnly = server.httpsOnly,
-                            onChange = { url ->
-                                if (url == server.url) serverUrls.clear() else serverUrls.save(url)
-                                serverUrl = url
-                            },
-                        )
-                    } else {
-                        null
-                    },
-                    version = version,
-                )
-            } else {
-                MainScreen(
-                    user,
-                    viewModel,
-                    scaffoldState,
-                    onRemindersEnabled,
-                    notificationPrompt,
-                    version,
-                    inviteLink = { code -> inviteLink(serverUrl, code) },
-                    shareLink = shareLink,
-                )
+        // A Surface rather than a background: it also gives the login screen's text the theme's colour, which in the
+        // dark theme is light instead of Material's default black.
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colors.background) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                val user = viewModel.user
+                if (user == null) {
+                    AuthScreen(
+                        state = viewModel.auth,
+                        onLogin = viewModel::login,
+                        onRegister = viewModel::register,
+                        onInputChanged = viewModel::clearAuthError,
+                        server = if (server.editable) {
+                            ServerChoice(
+                                current = serverUrl,
+                                default = server.url,
+                                httpsOnly = server.httpsOnly,
+                                onChange = { url ->
+                                    if (url == server.url) serverUrls.clear() else serverUrls.save(url)
+                                    serverUrl = url
+                                },
+                            )
+                        } else {
+                            null
+                        },
+                        version = version,
+                    )
+                } else {
+                    MainScreen(
+                        user,
+                        viewModel,
+                        scaffoldState,
+                        onRemindersEnabled,
+                        notificationPrompt,
+                        version,
+                        inviteLink = { code -> inviteLink(serverUrl, code) },
+                        shareLink = shareLink,
+                        theme = theme,
+                        onThemeChange = { choice ->
+                            themes.save(choice)
+                            theme = choice
+                        },
+                    )
+                }
             }
         }
     }

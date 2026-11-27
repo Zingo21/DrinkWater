@@ -122,6 +122,12 @@ Platform pieces are injected as interfaces from `MainActivity` / `MainViewContro
 `ReminderScheduler` (Android only; the web app's reminders come from the server), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
 iOS) used by `SessionStore`, `ReminderStore` and `ServerUrlStore`.
 
+**Theme.** `Theme.kt`: `DrinkWaterTheme` picks Material's `lightColors()` or `darkColors()` from the `ThemeChoice` in
+`ThemeStore` (device setting by default, `isSystemInDarkTheme`), chosen under Appearance in the account menu. Use theme
+colours, not fixed ones (the QR code's white box is the one exception); `App` wraps everything in a `Surface` so text
+outside a `Scaffold` is light in the dark theme. Before Compose draws, `index.html` and Android's `values-night` theme
+give the page or window a dark background on a dark device.
+
 **Web target.** `wasmJsMain/main.kt` uses localStorage for `Settings` and the page's own origin as the server.
 `WebPush.kt` is both its `PushRegistration` and its `NotificationPrompt` (the "Turn on" banner in `MainScreen`;
 browsers only ask for permission from a click), and `resources/sw.js` shows the pushes. Browsers can't schedule a
