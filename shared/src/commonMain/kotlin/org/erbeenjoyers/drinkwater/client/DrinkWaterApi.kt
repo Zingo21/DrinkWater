@@ -2,8 +2,10 @@ package org.erbeenjoyers.drinkwater.client
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpSend
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.plugin
 import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.HttpRequestBuilder
@@ -29,6 +31,7 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.SerializationException
@@ -66,8 +69,14 @@ import org.erbeenjoyers.drinkwater.api.WebPushKeyDto
 class ApiError(val status: HttpStatusCode, override val message: String) : Exception(message)
 
 /**
+ * The server couldn't be reached. Thrown instead of what the HTTP engine throws when that isn't an [Exception]: in the
+ * browser a failed fetch is a [kotlin.Error], which callers catching [Exception] for "no network" would miss.
+ */
+class ServerUnreachable(cause: Throwable) : Exception("Could not reach the server", cause)
+
+/**
  * Client for the DrinkWater server. Calls throw [ApiError] when the server rejects the request,
- * and whatever the HTTP engine throws when the server can't be reached.
+ * and when it can't be reached an [Exception]: the engine's own, or [ServerUnreachable].
  *
  * [baseUrl] is the server root, e.g. `http://10.0.2.2:8080`. By default the HTTP engine on the
  * classpath is used (OkHttp on Android, Darwin on iOS).
@@ -91,6 +100,20 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
         install(WebSockets)
         defaultRequest {
             url(baseUrl)
+        }
+    }
+
+    init {
+        client.plugin(HttpSend).intercept { request ->
+            try {
+                execute(request)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw e
+            } catch (e: Throwable) {
+                throw ServerUnreachable(e)
+            }
         }
     }
 
@@ -283,6 +306,19 @@ class DrinkWaterApi(baseUrl: String, httpClient: HttpClient = HttpClient()) {
      * connection can't be made or breaks, so collect it again to reconnect.
      */
     fun notifications(onConnected: () -> Unit = {}): Flow<Notification> = channelFlow {
+        try {
+            listen(onConnected)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw e
+        } catch (e: Throwable) {
+            // A WebSocket the browser couldn't open or lost, see [ServerUnreachable].
+            throw ServerUnreachable(e)
+        }
+    }
+
+    private suspend fun ProducerScope<Notification>.listen(onConnected: () -> Unit) {
         client.webSocket(
             notificationsUrl,
             request = {

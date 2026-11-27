@@ -7,6 +7,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
@@ -17,6 +19,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -133,6 +137,12 @@ class AppViewModel(
 
     private val _messages = Channel<String>(Channel.BUFFERED)
 
+    /** See [launchSafely]. Declared before `init`, which already launches coroutines. */
+    private val unexpectedErrors = CoroutineExceptionHandler { _, error ->
+        println("DrinkWater: unexpected error\n${error.stackTraceToString()}")
+        _messages.trySend("Something went wrong. If the app acts up, close and open it again.")
+    }
+
     /** One-off messages to show in a snackbar. */
     val messages: Flow<String> = _messages.receiveAsFlow()
 
@@ -149,7 +159,7 @@ class AppViewModel(
 
     init {
         // Not a session coroutine: the version shows on the login screen too.
-        viewModelScope.launch {
+        launchSafely {
             serverVersion = try {
                 api.serverInfo().version
             } catch (e: Exception) {
@@ -466,7 +476,7 @@ class AppViewModel(
     private fun authenticate(request: suspend () -> AuthResponse) {
         if (auth.busy) return
         auth = AuthState(busy = true)
-        viewModelScope.launch {
+        launchSafely {
             auth = try {
                 val session = request()
                 sessions.save(session)
@@ -490,7 +500,7 @@ class AppViewModel(
     private fun changeAccount(change: suspend () -> Unit) {
         if (account.busy) return
         account = account.copy(busy = true, error = null)
-        viewModelScope.launch {
+        launchSafely {
             try {
                 change()
                 account = AccountState()
@@ -573,7 +583,7 @@ class AppViewModel(
         val authToken = api.token ?: return
         registeredPushToken = null
         // Not a session coroutine: it has to outlive the logout that starts it.
-        viewModelScope.launch {
+        launchSafely {
             try {
                 api.unregisterDevice(deviceToken, authToken)
             } catch (e: Exception) {
@@ -636,7 +646,18 @@ class AppViewModel(
 
     private fun newSessionJob(): Job = SupervisorJob(viewModelScope.coroutineContext.job)
 
-    private fun launchInSession(block: suspend () -> Unit): Job = viewModelScope.launch(sessionJob) { block() }
+    private fun launchInSession(block: suspend () -> Unit): Job = launchSafely(sessionJob) { block() }
+
+    /**
+     * Every coroutine of the view model starts here. Each catches the failures it expects (an [ApiError], no network),
+     * but anything else, say a [kotlin.Error] or a browser exception, which aren't [Exception]s, would otherwise reach
+     * the platform's last resort, which in the web app stops Compose and leaves a white page. This keeps the app
+     * running instead, prints the whole error with its causes for whoever opens the console, and says something
+     * went wrong.
+     */
+    private fun launchSafely(context: CoroutineContext = EmptyCoroutineContext, block: suspend CoroutineScope.() -> Unit): Job =
+        viewModelScope.launch(context + unexpectedErrors, block = block)
+
 
     private companion object {
         const val INITIAL_RETRY_DELAY_MS = 1_000L

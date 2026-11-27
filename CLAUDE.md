@@ -118,6 +118,10 @@ register/login take ~0.25 s.
 **App.** `App.kt` builds a single `AppViewModel` (one big view model holding `auth`, `home`, `stats`, `friends`,
 `feed`, `account` state as Compose `mutableStateOf`); screens in `ui/` are stateless and get state + callbacks.
 Coroutines for the logged-in user run under `sessionJob` (`launchInSession`) so logging out cancels them all.
+Every view model coroutine starts through `launchSafely`, whose handler prints the whole error and shows "Something
+went wrong" instead of letting it reach the platform's last resort, which on the web stops Compose (a white page).
+Code catches `Exception` for expected failures; the shared client turns transport failures that aren't one (a browser's
+failed fetch is a `kotlin.Error`) into `ServerUnreachable`, so those are caught too.
 Platform pieces are injected as interfaces from `MainActivity` / `MainViewController`: `PushRegistration`,
 `ReminderScheduler` (Android only; the web app's reminders come from the server), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
 iOS) used by `SessionStore`, `ReminderStore` and `ServerUrlStore`.
@@ -134,7 +138,9 @@ browsers only ask for permission from a click), and `resources/sw.js` shows the 
 notification, so the web app's reminders come from the server: `WebPush.remindersFromServer` makes `AppViewModel`
 send the device's `ReminderSettings` and time zone with every `registerDevice`.
 Playwright's Chromium can't subscribe to a real push service (no Google API keys, and none in incognito contexts). Time zones need the `@js-joda/timezone` npm package it references.
-`index.html` refuses to load the app without WasmGC (Safari < 18.2). Safari 27.2 shows a blank white page without
+`index.html` refuses to load the app without WasmGC (Safari < 18.2), and shows "DrinkWater stopped working" with a
+Reload button and the error when the app dies anyway (kotlinx.coroutines' "Exception while trying to handle coroutine
+exception", or a WebAssembly trap); it builds that screen on demand, because `ComposeViewport` empties `<body>`. Safari 27.2 shows a blank white page without
 any error because of a WebKit bug with floating-point arguments in tail calls, which every Skia call from Skiko's
 `skiko.mjs` is; `composeApp/webpack.config.d/skikoNoTailCall.js` adds a loader (`composeApp/webpack/skikoNoTailCall.cjs`)
 that moves those calls into a `try`, and fails the build if a tail-call wrapper reaches the bundle. Remove both once

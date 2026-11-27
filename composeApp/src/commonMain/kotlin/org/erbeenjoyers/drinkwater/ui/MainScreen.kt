@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.LifecycleStartEffect
 import org.erbeenjoyers.drinkwater.AccountDialog
+import kotlinx.coroutines.CancellationException
 import org.erbeenjoyers.drinkwater.AppViewModel
 import org.erbeenjoyers.drinkwater.ThemeChoice
 import org.erbeenjoyers.drinkwater.api.UserDto
@@ -75,7 +76,15 @@ fun MainScreen(
     var editingReminders by remember { mutableStateOf(false) }
     var promptState by remember { mutableStateOf(NotificationPrompt.State.HIDDEN) }
     LaunchedEffect(notificationPrompt) {
-        promptState = notificationPrompt?.state() ?: NotificationPrompt.State.HIDDEN
+        // An effect that fails takes Compose down with it, a white page on the web; a banner isn't worth that.
+        promptState = try {
+            notificationPrompt?.state() ?: NotificationPrompt.State.HIDDEN
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            println("DrinkWater: could not decide on the notification banner\n${e.stackTraceToString()}")
+            NotificationPrompt.State.HIDDEN
+        }
     }
 
     // Live notifications only while the app is on screen.
