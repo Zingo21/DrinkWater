@@ -23,7 +23,58 @@
             font: 17px -apple-system, system-ui, sans-serif; text-align: center;
             flex-direction: column; justify-content: center;
         }
+        /* Over the app's canvas, which stops drawing when the app crashes. */
+        #crashed {
+            display: none; position: fixed; inset: 0; z-index: 2147483647; box-sizing: border-box; padding: 32px;
+            background: inherit; font: 17px -apple-system, system-ui, sans-serif; text-align: center;
+            flex-direction: column; justify-content: center; align-items: center;
+        }
+        #crashed button { font: inherit; padding: 10px 24px; border: 0; border-radius: 6px; background: #6200EE; color: #fff; }
+        #crashed pre {
+            max-width: 100%; max-height: 30vh; overflow: auto; text-align: left; white-space: pre-wrap;
+            font-size: 12px; opacity: 0.7;
+        }
     </style>
+    <script>
+        // Shows #crashed when the app has stopped for good, instead of leaving a white page, with what the browser said:
+        // reloading usually helps, and the text is something to send whoever runs the server. Two signs mean that:
+        // kotlinx.coroutines saying a coroutine's error handler itself failed, which is how Compose stopping looks,
+        // and a WebAssembly trap. The app's own errors are handled inside it (AppViewModel.launchSafely).
+        (function () {
+            var details = null;
+            // Also when the crash came before the page's body existed; DOMContentLoaded shows it then.
+            // Built when needed: the app empties <body> when it starts.
+            function render() {
+                if (details === null || document.body === null || document.getElementById("crashed") !== null) return;
+                var box = document.createElement("div");
+                box.id = "crashed";
+                box.innerHTML = "<p><strong>DrinkWater stopped working.</strong></p>" +
+                    "<p>Reloading usually helps. If it keeps happening, send whoever runs the server what it says below.</p>" +
+                    "<p><button type=\"button\">Reload</button></p><pre></pre>";
+                box.querySelector("button").onclick = function () { location.reload(); };
+                box.querySelector("pre").textContent = details;
+                document.body.appendChild(box);
+                box.style.display = "flex";
+            }
+            function show(text) {
+                if (details !== null) return;
+                details = String(text);
+                render();
+            }
+            document.addEventListener("DOMContentLoaded", render);
+            var error = console.error;
+            console.error = function () {
+                error.apply(console, arguments);
+                var text = Array.prototype.map.call(arguments, String).join(" ");
+                if (text.indexOf("Exception while trying to handle coroutine exception") !== -1) show(text);
+            };
+            window.addEventListener("error", function (event) {
+                if (typeof WebAssembly === "object" && event.error instanceof WebAssembly.RuntimeError) {
+                    show(event.error.stack || event.error);
+                }
+            });
+        })();
+    </script>
     <script>
         // The app needs WebAssembly garbage collection: iOS/Safari 18.2, Chrome 119 or Firefox 120 and later.
         // This validates the smallest module that declares a GC struct type.
