@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.erbeenjoyers.drinkwater.FriendsState
+import org.erbeenjoyers.drinkwater.InviteState
 import org.erbeenjoyers.drinkwater.api.FriendRequestDto
 import org.erbeenjoyers.drinkwater.api.LeaderboardEntryDto
 import org.erbeenjoyers.drinkwater.api.UserDto
@@ -54,6 +55,11 @@ fun FriendsScreen(
     onRemoveFriend: (UserDto) -> Unit,
     onNudge: (UserDto) -> Unit,
     onRetry: () -> Unit,
+    invite: InviteState = InviteState(),
+    inviteLink: (code: String) -> String = { it },
+    onLoadInvite: () -> Unit = {},
+    onResetInvite: () -> Unit = {},
+    shareLink: ((String) -> Unit)? = null,
 ) {
     if (!state.loaded) {
         Column(
@@ -73,9 +79,22 @@ fun FriendsScreen(
     }
 
     var friendToRemove by remember { mutableStateOf<UserDto?>(null) }
+    var inviting by remember { mutableStateOf(false) }
+    if (inviting) {
+        InviteDialog(invite, inviteLink, onReset = onResetInvite, onDismiss = { inviting = false }, shareLink = shareLink)
+    }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp)) {
         item(key = "add") { AddFriendRow(enabled = !state.working, onAddFriend) }
+        item(key = "invite") {
+            OutlinedButton(
+                onClick = {
+                    inviting = true
+                    onLoadInvite()
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) { Text("Invite with a link or QR code") }
+        }
 
         if (state.incoming.isNotEmpty()) {
             item(key = "incoming-header") { SectionHeader("Requests to you") }
@@ -111,7 +130,7 @@ fun FriendsScreen(
         if (state.leaderboard.none { it.user.id != userId }) {
             item(key = "no-friends") {
                 Text(
-                    "No friends yet. Add someone by their username to see when they drink and nudge each other.",
+                    "No friends yet. Invite someone or add them by username to see when they drink and nudge each other.",
                     style = MaterialTheme.typography.body2,
                     modifier = Modifier.padding(top = 8.dp),
                 )

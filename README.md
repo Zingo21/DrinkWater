@@ -4,11 +4,13 @@ An app for reminding yourself, and your friends, to drink water. You log what yo
 your daily goal, and your friends get a notification when you drink, reach your goal or nudge them to have a glass.
 
 - **Accounts** with a username and password, no e-mail needed.
-- **Friends**: send and accept friend requests, see a leaderboard of today's totals and streaks.
+- **Friends**: invite with a link or QR code, or send and accept friend requests by username; see a leaderboard of
+  today's totals and streaks.
 - **Drinks**: log a glass in one tap, set a daily goal, see the last seven days and your streak.
 - **Nudges**: remind a friend to drink (at most once every five minutes per friend).
 - **Notifications**: live while the app is open, as push notifications while it is closed.
 - **Reminders** when you haven't logged a drink for a while, only during the hours you choose.
+- **Dark mode**: follows the phone or computer, or light or dark as picked under Appearance in the account menu.
 
 It runs as an **Android app** and as a **web app** that iPhones add to their Home Screen (no paid Apple developer
 account needed). Both talk to a small **server** you host yourself, for example on a VM at home.
@@ -379,6 +381,9 @@ so the app and the server use the same models. Endpoints marked 🔒 need an `Au
 | POST 🔒 | `/friends/requests` | Send a friend request by username (accepts it if they already asked you) |
 | POST 🔒 | `/friends/requests/{id}/accept` | Accept an incoming request |
 | DELETE 🔒 | `/friends/requests/{id}` | Decline an incoming or cancel an outgoing request |
+| GET 🔒 | `/me/invite` | Your invite code, made on first use. The apps share it as `https://<server>/#invite=<code>` and as a QR code of that link |
+| POST 🔒 | `/me/invite/reset` | A new invite code; links with the old one stop working |
+| POST 🔒 | `/friends/invite` | Become friends at once with whoever the `code` in the body is the invite of (no request to accept: sharing the link was the consent) |
 | POST 🔒 | `/friends/{friendId}/nudge` | Remind a friend to drink (at most once every five minutes per friend) |
 | GET 🔒 | `/friends/leaderboard` | You and your friends with today's total, goal and streak, most drunk today first. `tz` as for `/me/stats` |
 | GET | `/drinks` | Available drinks |

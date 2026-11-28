@@ -21,6 +21,8 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.update
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 
 const val NUDGE_COOLDOWN_MS = 5 * 60 * 1000L
@@ -31,11 +33,15 @@ const val NUDGE_COOLDOWN_MS = 5 * 60 * 1000L
  */
 const val FRIEND_REQUEST_NOTIFY_COOLDOWN_MS = 60 * 60 * 1000L
 
+/** What [FriendService.newInviteCode] makes; anything else can't be an invite. */
+private val INVITE_CODE = Regex("^[A-Za-z0-9_-]{22}$")
+
 class FriendService(
     private val db: Db,
     private val users: UserService,
     private val notifications: NotificationService,
 ) {
+    private val random = SecureRandom()
     private val nudges = PairCooldown(NUDGE_COOLDOWN_MS)
     private val requestNotifications = PairCooldown(FRIEND_REQUEST_NOTIFY_COOLDOWN_MS)
 
@@ -84,6 +90,59 @@ class FriendService(
                 notifications.send(target.id, Notification.FriendRequestAccepted(response.request.to))
         }
         return response
+    }
+
+    /** [userId]'s invite code, made the first time they ask for it. */
+    suspend fun invite(userId: Int): String = db.query {
+        // Only fills in a missing code, so two first requests at once can't hand out a code that is then replaced.
+        Users.update({ (Users.id eq userId) and Users.inviteCode.isNull() }) { it[inviteCode] = newInviteCode() }
+        Users.select(Users.inviteCode).where { Users.id eq userId }.single()[Users.inviteCode]!!
+    }
+
+    /** Gives [userId] a new invite code, so the links shared until now stop working. */
+    suspend fun resetInvite(userId: Int): String {
+        val code = newInviteCode()
+        db.query { Users.update({ Users.id eq userId }) { it[inviteCode] = code } }
+        return code
+    }
+
+    /**
+     * Makes [userId] friends with whoever [code] is the invite of, at once: sharing the link was their consent. A
+     * request between the two either way is accepted with it. Returns the inviter, also when they already were friends.
+     */
+    suspend fun acceptInvite(userId: Int, code: String): UserDto {
+        val inviter = if (INVITE_CODE.matches(code)) {
+            db.query { Users.selectAll().where { Users.inviteCode eq code }.singleOrNull()?.toUserDto() }
+        } else {
+            null
+        }
+        if (inviter == null) {
+            throw ApiException(HttpStatusCode.NotFound, "This invite link doesn't work any more. Ask for a new one.")
+        }
+        if (inviter.id == userId) throw ApiException(HttpStatusCode.BadRequest, "That's your own invite link. Send it to a friend.")
+
+        val becameFriends = db.query {
+            val existing = Friendships.selectAll().where { between(userId, inviter.id) }.singleOrNull()
+            when {
+                existing == null -> {
+                    Friendships.insert {
+                        it[requesterId] = inviter.id
+                        it[addresseeId] = userId
+                        it[status] = FriendshipStatus.ACCEPTED
+                        it[createdAt] = System.currentTimeMillis()
+                    }
+                    true
+                }
+                existing[Friendships.status] == FriendshipStatus.ACCEPTED -> false
+                else -> {
+                    Friendships.update({ Friendships.id eq existing[Friendships.id] }) { it[status] = FriendshipStatus.ACCEPTED }
+                    true
+                }
+            }
+        }
+        val user = users.findById(userId)
+        if (becameFriends && user != null) notifications.send(inviter.id, Notification.InviteAccepted(user))
+        return inviter
     }
 
     /** Accepts a pending request that was sent to [userId]. */
@@ -159,6 +218,12 @@ class FriendService(
             throw ApiException(HttpStatusCode.TooManyRequests, "You nudged them just now. Give them a few minutes.")
         }
         notifications.send(friendId, Notification.Nudge(user))
+    }
+
+    /** 128 random bits, base64url: impossible to guess, short enough for a QR code. */
+    private fun newInviteCode(): String {
+        val bytes = ByteArray(16).also { random.nextBytes(it) }
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
     private fun between(a: Int, b: Int): Op<Boolean> =

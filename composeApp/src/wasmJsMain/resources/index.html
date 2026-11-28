@@ -8,9 +8,16 @@
     <link rel="icon" type="image/png" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-180.png">
     <meta name="apple-mobile-web-app-title" content="DrinkWater">
-    <meta name="theme-color" content="#6200EE">
+    <!-- The app's top bar: purple in the light theme, Material's dark surface in the dark one. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#6200EE">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121212">
+    <meta name="color-scheme" content="light dark">
     <style>
-        html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; }
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; color: #000; }
+        /* So a dark device doesn't flash white while the app loads; the app then draws its own background. */
+        @media (prefers-color-scheme: dark) {
+            html, body { background: #121212; color: #fff; }
+        }
         #unsupported {
             display: none; box-sizing: border-box; height: 100%; padding: 32px;
             font: 17px -apple-system, system-ui, sans-serif; text-align: center;

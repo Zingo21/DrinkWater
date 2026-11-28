@@ -489,6 +489,52 @@ class ApiTest {
     }
 
     @Test
+    fun `opening someone's invite link makes you friends at once`() {
+        val push = RecordingPush()
+        apiTest(push) { client ->
+            val anna = DrinkWaterApi("http://localhost", client)
+            val bertil = DrinkWaterApi("http://localhost", client)
+            val cecilia = DrinkWaterApi("http://localhost", client)
+            val david = DrinkWaterApi("http://localhost", client)
+            val annaUser = anna.register("anna", "password123").user
+            val bertilUser = bertil.register("bertil", "password123").user
+            cecilia.register("cecilia", "password123")
+            val davidUser = david.register("david", "password123").user
+            anna.registerDevice("phone", DevicePlatform.ANDROID)
+
+            // The same code until it is replaced.
+            val code = anna.invite().code
+            assertEquals(code, anna.invite().code)
+
+            assertEquals(annaUser, bertil.acceptInvite(code))
+            assertEquals(listOf(bertilUser), anna.friends())
+            assertEquals(listOf(annaUser), bertil.friends())
+            assertEquals(listOf("bertil used your invite and is now your friend"), push.drain().map { it.second.body })
+
+            // Opening it again changes nothing and tells nobody.
+            assertEquals(annaUser, bertil.acceptInvite(code))
+            assertTrue(push.drain().isEmpty())
+            assertEquals(HttpStatusCode.BadRequest, assertFailsWith<ApiError> { anna.acceptInvite(code) }.status)
+
+            // A pending request between the two, either way, is settled by the invite.
+            david.sendFriendRequest("anna")
+            assertEquals(annaUser, david.acceptInvite(code))
+            assertEquals(setOf(bertilUser, davidUser), anna.friends().toSet())
+            assertTrue(anna.friendRequests().incoming.isEmpty())
+
+            // A new link retires the old one.
+            val newCode = anna.resetInvite().code
+            assertTrue(newCode != code)
+            assertEquals(HttpStatusCode.NotFound, assertFailsWith<ApiError> { cecilia.acceptInvite(code) }.status)
+            assertEquals(HttpStatusCode.NotFound, assertFailsWith<ApiError> { cecilia.acceptInvite("../../me") }.status)
+            assertEquals(annaUser, cecilia.acceptInvite(newCode))
+
+            val stranger = DrinkWaterApi("http://localhost", client)
+            assertEquals(HttpStatusCode.Unauthorized, assertFailsWith<ApiError> { stranger.acceptInvite(newCode) }.status)
+        }
+    }
+
+    @Test
     fun `users without the app open get a push instead`() {
         val push = RecordingPush(dead = setOf("old-phone"))
         apiTest(push) { client ->

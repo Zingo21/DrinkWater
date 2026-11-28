@@ -91,6 +91,11 @@ scope that each minute pushes the reminders of devices that registered reminder 
 computing due times with the shared `nextReminder` (`shared/.../reminders/`), the same function Android schedules with;
 it stores nothing about sent reminders, it checks whether one fell between the previous check and now. Web subscriptions must point at a known push service
   (`WebPushSubscription.parse`), or the server could be made to post anywhere. Nudge rate limiting, and the cooldown on friend request notifications (so a stranger can't send, cancel and resend to flood someone), is in memory in `FriendService` (`PairCooldown`).
+- **Invites:** `Users.inviteCode` (128 random bits, base64url, made on first `GET /me/invite`, replaced by
+  `/me/invite/reset`); `FriendService.acceptInvite` makes the two friends with no request, accepting one that is pending
+  either way, and notifies the inviter (`Notification.InviteAccepted`). The link is `https://<server>/#invite=<code>`
+  (`inviteLink`): the fragment never reaches the server, the web app's `main.kt` reads it, removes it from the address
+  bar and `AppViewModel` accepts it once someone is logged in. The invite dialog draws the QR code with qrose.
 - **Time zones:** stats, streaks and the leaderboard are computed per request in the caller's IANA zone (`tz`
   parameter / `timeZone` field, default UTC), see `services/Stats.kt`.
 - **Web app:** `routes/WebAppRoutes.kt` serves the built web app at `/` (the API routes are more specific and win).
@@ -116,6 +121,12 @@ Coroutines for the logged-in user run under `sessionJob` (`launchInSession`) so 
 Platform pieces are injected as interfaces from `MainActivity` / `MainViewController`: `PushRegistration`,
 `ReminderScheduler` (Android only; the web app's reminders come from the server), and secure `Settings` (Keystore-encrypted prefs on Android, Keychain on
 iOS) used by `SessionStore`, `ReminderStore` and `ServerUrlStore`.
+
+**Theme.** `Theme.kt`: `DrinkWaterTheme` picks Material's `lightColors()` or `darkColors()` from the `ThemeChoice` in
+`ThemeStore` (device setting by default, `isSystemInDarkTheme`), chosen under Appearance in the account menu. Use theme
+colours, not fixed ones (the QR code's white box is the one exception); `App` wraps everything in a `Surface` so text
+outside a `Scaffold` is light in the dark theme. Before Compose draws, `index.html` and Android's `values-night` theme
+give the page or window a dark background on a dark device.
 
 **Web target.** `wasmJsMain/main.kt` uses localStorage for `Settings` and the page's own origin as the server.
 `WebPush.kt` is both its `PushRegistration` and its `NotificationPrompt` (the "Turn on" banner in `MainScreen`;
